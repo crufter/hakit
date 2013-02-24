@@ -101,11 +101,11 @@ fromRight x = case x of
 
 safeDec x = if x > 1 then x - 1 else 0
 stripDoc doc = Hakit.unset "location" doc
-genSel frameDoc coll = Mdb.select (fromDoc (stripDoc frameDoc)) coll
+genSel hakitDoc coll = Mdb.select (fromDoc (stripDoc hakitDoc)) coll
 -- find, findOne
 genQuery :: Hakit.Document -> T.Text -> Mdb.Query
-genQuery frameDoc coll =
-    let (specDoc, doc) = Hakit.specials frameDoc
+genQuery hakitDoc coll =
+    let (specDoc, doc) = Hakit.specials hakitDoc
         spec = Hakit.docToSpecials specDoc
         select = Mdb.select (fromDoc doc) coll
         setSort sel = if length (Hakit.sort spec) > 0

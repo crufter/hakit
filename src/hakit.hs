@@ -39,7 +39,7 @@ import qualified Data.CaseInsensitive as CI
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.Wai as Wai
 import qualified Data.Conduit as Cond
--- import qualified Hframe.ExtMime as EM
+-- import qualified Hhakit.ExtMime as EM
 import Control.Monad.IO.Class (liftIO)
 
 {--------------------------------------------------------------------
@@ -571,11 +571,11 @@ queryToDoc q = M.fromList $ map singlify (gr (map f q)) where
   Concrete HTTP server implementation (using Warp).  
 --------------------------------------------------------------------}
 
-waiToFrame :: Wai.Request -> Req
-waiToFrame wr = Req (Wai.pathInfo wr) (queryToDoc $ Wai.queryString wr) emptyDoc [] []
+waiTohakit :: Wai.Request -> Req
+waiTohakit wr = Req (Wai.pathInfo wr) (queryToDoc $ Wai.queryString wr) emptyDoc [] []
 
-frameToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
-frameToWai fresp = do
+hakitToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
+hakitToWai fresp = do
     fr <- fresp
     let statusCode = case status fr of
             OK                    -> HTypes.status200
@@ -599,4 +599,4 @@ startServer :: Config -> (Req -> IO Resp) -> IO ()
 startServer conf reqHandler = do
     let p = httpPort conf
     putStrLn $ "Server started listening on port " ++ show p
-    Warp.run p (\a -> frameToWai $ liftIO $ reqHandler (waiToFrame a))
+    Warp.run p (\a -> hakitToWai $ liftIO $ reqHandler (waiTohakit a))

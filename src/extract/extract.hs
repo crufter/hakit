@@ -1,8 +1,8 @@
-module Hframe.Extract (
+module Hakit.Extract (
     extract, extractSafe
 ) where
 
-import Hframe.Frame
+import Hakit.Frame
 import qualified Data.List as L
 import Control.Monad.Error
 import qualified Control.Monad as M
