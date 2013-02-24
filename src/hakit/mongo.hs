@@ -9,7 +9,7 @@ import qualified Hakit
 import qualified Data.Text as T
 import qualified Data.ByteString as S
 import qualified Data.List.Split as Spl
-import qualified Data.ByteString.Base64 as B64
+-- import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Word as W
 import qualified Data.List as L

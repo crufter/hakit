@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
-module Testsuite.Hakit.Mongo where
+module Tests.Hakit.Mongo where
 
 import Test.HUnit
-import qualified Hframe.Mongo as M
-import Hframe.Frame
+import qualified Hakit.Mongo as M
+import Hakit
 import qualified Data.Text as T
 import qualified Safe
 import Debug.Trace

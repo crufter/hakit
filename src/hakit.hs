@@ -7,8 +7,8 @@ module Hakit (
     -- * Convenience.
     isInt, toInt, isFloat, toFloat, isString, toString, isBool, toBool, isMap, toMap, isList, toList, isNil, toNil, len,
     getString, getInt, getFloat, getBool, getMap, getList, getNil,
-    d, dt, (.-), dbRefToStr, strToDbRef,
-    emptyDoc,
+    d, dt, dm, (.-), dbRefToStr, strToDbRef,
+    emptyDoc, e1, e2, e3,
     
     -- * Database related.
     Db(..), Specials(..), specials, docToSpecials, toDocStyleSort,
@@ -289,8 +289,8 @@ data Specials = Specials {
 toDocStyleSort :: [T.Text] -> Document
 toDocStyleSort a =
     let f x = if T.isInfixOf "-" x
-        then (T.tail x) .- (-1::Integer)
-        else x .- (1::Integer)
+            then (T.tail x) .- (-1::Integer)
+            else x .- (1::Integer)
     in M.fromList $ map f a
 
 dvToStr docval = case docval of
@@ -480,14 +480,14 @@ parseLocation scheme t =
 instance Show Location where
     show (Location a b) =
         let f x = if T.head x == '#'
-            then case M.lookup (T.tail x) b of
-                Just docv   -> case docv of
-                    DocString s     -> s
-                    DocFloat f      -> T.pack $ show f
-                    DocInt i        -> T.pack $ show i
-                    otherwise       -> T.pack $ show docv
-                Nothing     -> error $ "Can't find element: " ++ show x
-            else x
+                then case M.lookup (T.tail x) b of
+                    Just docv   -> case docv of
+                        DocString s     -> s
+                        DocFloat f      -> T.pack $ show f
+                        DocInt i        -> T.pack $ show i
+                        otherwise       -> T.pack $ show docv
+                    Nothing     -> error $ "Can't find element: " ++ show x
+                else x
         in "/" ++ (T.unpack $ T.intercalate "/" $ map f a)
 
 -- | Response status.

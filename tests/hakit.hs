@@ -1,4 +1,4 @@
-module Testsuite.Hakit where
+module Tests.Hakit where
 
 import Test.HUnit
 import Hakit
