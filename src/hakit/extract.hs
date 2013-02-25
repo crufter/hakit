@@ -112,7 +112,7 @@ extractSafe doc rules =
         if get "isList" rule == d True
             then docMapToList key (mapM (\e -> validateVal e r builtins) (toList (get key doc)))
             else M.liftM (\x -> (key, x)) (validateVal (get key doc) r builtins))
-        (map transFormR (Map.toList rules))
+        (map transFormR $ Map.toList rules)
     where
     toList :: DocVal -> [DocVal]
     toList d = case d of DocList l -> l; otherwise -> [d]

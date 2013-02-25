@@ -1,14 +1,14 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverloadedStrings #-}
 module Hakit (
     -- * Document related types.
-    DMap, DList, DTyped(..), DocVal(..), Document, Collection,
+    Document, DList, DTyped(..), DocVal(..), Collection,
     DocValComp(..), DocComp(..),
     
     -- * Convenience.
     isInt, toInt, isFloat, toFloat, isString, toString, isBool, toBool, isMap, toMap, isList, toList, isNil, toNil, len,
     getString, getInt, getFloat, getBool, getMap, getList, getNil,
-    d, dt, dm, (.-), dbRefToStr, strToDbRef,
-    emptyDoc, e1, e2, e3,
+    d, dt, dm, (.-), dbRef, oid, dbRefToStr, strToDbRef,
+    nilDoc, e1, e2, e3,
     
     -- * Database related.
     Db(..), Specials(..), specials, docToSpecials, toDocStyleSort,
@@ -46,7 +46,7 @@ import Control.Monad.IO.Class (liftIO)
   Document.  
 --------------------------------------------------------------------}
 
-type DMap = M.Map T.Text DocVal
+type Document = M.Map T.Text DocVal
 type DList = [DocVal]
 -- Allows us to store some metainformation along with the DocVal.
 data DTyped = DTyped {
@@ -58,7 +58,7 @@ data DocVal =   DocInt          Integer
                 | DocString     T.Text
              -- | DocBS         ByteString
                 | DocBool       Bool
-                | DocMap        DMap
+                | DocMap        Document
                 | DocList       DList
                 | DocTyped      DTyped     
                 | Nil
@@ -69,7 +69,7 @@ toInt a =       case a of DocInt b -> a; otherwise -> error $ show a ++ " is not
 isFloat a =     case a of DocFloat b -> True; otherwise -> False
 toFloat a =     case a of DocFloat b -> b; otherwise -> error $ show a ++ " is not a Float."
 isString a =    case a of DocString b -> True; otherwise -> False
-toString a =    case a of DocString b -> b; otherwise -> error $ show a ++ " is not a String."
+toString a =    case a of DocString b -> b; otherwise -> error $ show a ++ " is not a String (Text)."
 isBool a =      case a of DocBool b -> True; otherwise -> False
 toBool a =      case a of DocBool b -> b; otherwise -> error $ show a ++ " is not a Bool."
 isMap a =       case a of DocMap b -> True; otherwise -> False
@@ -82,7 +82,7 @@ len a = case a of
     DocString s -> T.length s
     DocList l   -> length l
     DocMap m    -> M.size m
-    otherwise   -> error "len applied on incompatible DocVal type."
+    otherwise   -> error $ "len applied on incompatible DocVal: " ++ show a
 
 -- "DocValCompatible" class for types which know how to convert themself to a DocVal.
 class (Show a, Eq a) => DocValComp a where
@@ -100,7 +100,7 @@ instance DocValComp String where
 instance DocValComp Bool where
     toDocVal = DocBool
 
-instance DocValComp DMap where
+instance DocValComp Document where
     toDocVal = DocMap
 
 instance DocValComp DList where
@@ -179,7 +179,7 @@ get :: T.Text -> Document -> DocVal
 get accPathStr doc = fst $ getRec accPathStr doc
 
 -- Helper functions for fast retrieval when you are sure the element is present.
-getString   a b = case get a b of DocString s   -> s;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Text."
+getString   a b = case get a b of DocString s   -> s;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a String (Text)."
 getInt      a b = case get a b of DocInt i      -> i;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not an Int."
 getFloat    a b = case get a b of DocFloat f    -> f;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Float."
 getBool     a b = case get a b of DocBool b     -> b;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Bool."
@@ -192,7 +192,7 @@ exists :: T.Text -> Document -> Bool
 exists accPathStr doc = snd $ getRec accPathStr doc
 
 set :: DocValComp d => T.Text -> Document -> d -> Document
-set key doc val = M.update (\_ -> Just $ toDocVal val) key doc
+set key doc val = M.alter (\_ -> Just $ toDocVal val) key doc
 
 unset :: T.Text -> Document -> Document
 unset key doc = M.delete key doc
@@ -279,10 +279,11 @@ specialKeys = let sp = ["sort", "limit", "skip", "page", "location"] in
 specials :: Document -> (Document, Document)
 specials doc = M.partitionWithKey (\k _ -> M.member k specialKeys) doc
 
+-- | 
 data Specials = Specials {
     sort                :: [T.Text],    -- Example: ["x", "-y"]
     limit, skip, page   :: Integer,
-    loc                 :: DMap         -- Example: ["server" .- "main", "db" .- "testDb", "coll" .- "testCollection"]
+    loc                 :: Document         -- Example: ["server" .- "main", "db" .- "testDb", "coll" .- "testCollection"]
 }
 
 -- ["x", "-y"] -> ["x" .- 1, "y" .- (-1)]
@@ -293,35 +294,36 @@ toDocStyleSort a =
             else x .- (1::Integer)
     in M.fromList $ map f a
 
-dvToStr docval = case docval of
-    DocString s -> s
-    otherwise -> ""     -- This is kind of a strange default.
-dvToStrList docval = case docval of
-    DocList l -> map dvToStr l
-    otherwise -> []
-dvToI docval = case docval of
-    DocInt i -> i
-    otherwise -> 0
-dvToM docval = case docval of
-    DocMap m -> m
-    otherwise -> M.empty
 docToSpecials doc =
     let spec = fst (specials doc)   -- Just to decrease algorightmic complexity.
         sort = dvToStrList (get "sort" spec)
         lim = dvToI (get "limit" spec)
         skip = dvToI (get "skip" spec)
         page = dvToI (get "page" spec)
-        loc = dvToM (get "location" spec) in
-    Specials sort lim skip page loc
+        loc = dvToM (get "location" spec)
+        dvToStr docval = case docval of
+            DocString s -> s
+            otherwise -> ""     -- This is kind of a strange default.
+        dvToStrList docval = case docval of
+            DocList l -> map dvToStr l
+            otherwise -> []
+        dvToI docval = case docval of
+            DocInt i -> i
+            otherwise -> 0
+        dvToM docval = case docval of
+            DocMap m -> m
+            otherwise -> M.empty
+    in Specials sort lim skip page loc
 
-type Document = DMap
 type Collection = T.Text
 
-emptyDoc :: M.Map T.Text DocVal
-emptyDoc = M.empty
+-- | An empty document.
+nilDoc :: M.Map T.Text DocVal
+nilDoc = M.empty
 
 size a = M.size a
 
+-- | A typeclass for types convertible to a Document.
 class DocComp a where
     toDoc :: a -> Document
 
@@ -330,9 +332,6 @@ instance DocComp [(T.Text, DocVal)] where
 
 instance DocComp Document where
     toDoc = id
-
-nil :: [(T.Text, DocVal)]
-nil = []
 
 {--------------------------------------------------------------------
   The database class.  
@@ -416,7 +415,7 @@ resolveDbRefs db docs = do
         triples     = gr' $ map (\ref -> (locationToStr $ toM ref, unsetId $ toM ref, strToId $ idOf' ref)) refs
         toM x       = case x of
             DocTyped DTyped{typ="dbRef",val=DocMap m} -> m;
-            otherwise -> error "Location should be a DMap." 
+            otherwise -> error "Location should be a Document." 
         unsetId x   = unset "id" x
         locationToStr x = dbRefToStr $ unsetId x
     nestedPairs <- mapM (toCollIdPairs db) triples
@@ -568,11 +567,11 @@ queryToDoc q = M.fromList $ map singlify (gr (map f q)) where
                             Nothing -> d $ T.pack str
 
 {--------------------------------------------------------------------
-  Concrete HTTP server implementation (using Warp).  
+  Actual HTTP server implementation (using Warp).  
 --------------------------------------------------------------------}
 
 waiTohakit :: Wai.Request -> Req
-waiTohakit wr = Req (Wai.pathInfo wr) (queryToDoc $ Wai.queryString wr) emptyDoc [] []
+waiTohakit wr = Req (Wai.pathInfo wr) (queryToDoc $ Wai.queryString wr) nilDoc [] []
 
 hakitToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
 hakitToWai fresp = do

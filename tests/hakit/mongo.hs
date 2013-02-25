@@ -23,12 +23,12 @@ testDropDb = TestCase $ f >>= \(a, b) -> assertBool a b where
         let d = setLocation db loc
             doc = toDoc ["a" .- "b"]
         insert d doc
-        docs <- find d nil
+        docs <- find d nilDoc
         if length docs == 0 || unset "id" (docs!!0) /= doc
             then return ("Can't insert", False)
             else do
                 dropDb db loc
-                docs <- find d nil
+                docs <- find d nilDoc
                 if length docs /= 0
                     then return ("Can't drop db.", False)
                     else return ("", True)
@@ -45,12 +45,12 @@ cases1 = [
 
 testDI = TestCase $ mapM_ (\c -> do {(got, verdict) <- f c; want c got verdict}) cases1 where
     f doc1 = do
-        let doc = Frame.toDoc doc1
+        let doc = toDoc doc1
         db <- dbConn
         dropCurrent db
         let dbc = setLocation db ["coll" .- "testCollection"]
-        Frame.insert dbc doc
-        docs <- find dbc nil
+        insert dbc doc
+        docs <- find dbc nilDoc
         let docF = Safe.atNote "testDI: no doc found" docs 0
         let got = if exists "id" doc then docF else unset "id" docF
         if got == doc then return (got, True) else return (got, False)
@@ -93,9 +93,9 @@ testDRCrossColl = TestCase $ mapM_ (\c -> do {(got, verdict) <- f c; want (e3 c)
         dropCurrent db
         mapM_ (\a -> insert (setLocation db ["coll" .- fst a]) (snd a)) (e1 c)
         let qdbc = setLocation db ["coll" .- (e2 c)]
-        docs <- find qdbc nil >>= resolve db
+        docs <- find qdbc nilDoc >>= resolve db
         let got = Safe.atNote "testDRCrossColl: resolution lost even input docs." docs 0
-        if got == Frame.toDoc (e3 c) then return (got, True) else return (got, False)
+        if got == toDoc (e3 c) then return (got, True) else return (got, False)
 
 loc31 = ["db" .- "db1", "coll" .- "coll1"]
 loc32 = ["db" .- "db2", "coll" .- "coll2"]
@@ -118,9 +118,9 @@ testDRCrossDb = TestCase $ mapM_ (\c -> do {(got, verdict) <- f c; want (e3 c) g
         dropDb db loc31
         dropDb db loc32
         mapM_ (\a -> insert db a) (e1 c)
-        docs <- find (setLocation db (e2 c)) nil >>= resolve db
+        docs <- find (setLocation db (e2 c)) nilDoc >>= resolve db
         let got = Safe.atNote "testDRCrossDb: resolution lost even input docs." docs 0
-        if got == Frame.toDoc (e3 c) then return (got, True) else return (got, False)
+        if got == toDoc (e3 c) then return (got, True) else return (got, False)
  
 loc41 = ["server" .- "prim", "db" .- "db1", "coll" .- "coll1"]
 loc42 = ["server" .- "sec", "db" .- "db2", "coll" .- "coll2"]
@@ -143,9 +143,9 @@ testDRCrossServer = TestCase $ mapM_ (\c -> do {(got, verdict) <- f c; want (e3 
         dropDb db loc41
         dropDb db loc42
         mapM_ (\a -> insert db a) (e1 c)
-        docs <- find (setLocation db (e2 c)) nil >>= resolve db
+        docs <- find (setLocation db (e2 c)) nilDoc >>= resolve db
         let got = Safe.atNote "testDRCrossServer: resolution lost even input docs." docs 0
-        if got == Frame.toDoc (e3 c) then return (got, True) else return (got, False)
+        if got == toDoc (e3 c) then return (got, True) else return (got, False)
 
 tests = TestList [
     TestLabel "testDropDb"          testDropDb,
