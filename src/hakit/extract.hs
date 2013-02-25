@@ -1,17 +1,19 @@
 {-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
 module Hakit.Extract (
-    extract, extractSafe
+    extract, extractSafe, builtins
 ) where
 
 import Hakit
 import qualified Data.List as L
 import Control.Monad.Error
-import qualified Control.Monad as M
+import qualified Control.Monad as CM
 import qualified Data.Text as T
 import qualified Data.Map as Map
+import Data.Maybe (isJust, fromJust)
 
 type Validator = T.Text -> DocVal -> Document -> Either String DocVal
 
+-- | Builtin validators.
 builtins = [
     ("int", inter),
     ("float", floater),
@@ -96,34 +98,70 @@ getValidator typ validators = case L.find (\(a, _) -> a == typ) validators of
 validateVal :: DocVal -> (T.Text, Document) -> [(T.Text, Validator)] -> Either String DocVal
 validateVal docVal (key, rule) validators =
     let validator = getValidator (getString "type" rule) validators
-    in
-    case validator key docVal rule of
+    in case validator key docVal rule of
         Left x  -> Left x
         Right x -> Right x
 
-mapRight :: (b -> c) -> Either a b -> Either a c
-mapRight f a = case a of
-    Left l  -> Left l
-    Right r -> Right $ f r
+data ListOpts = ListOpts {
+    listMin, listMax    :: Int,
+    listIgnore          :: Bool
+} deriving (Show)
+
+toListOpts :: Document -> ListOpts
+toListOpts d =
+    let lmin'       = get "listMin" d
+        lmin        = if isInt lmin'
+            then fromInteger $ toInt lmin'
+            else 0
+        lmax'       = get "listMax" d
+        lmax        = if isInt lmax'
+            then fromInteger $ toInt lmax'
+            else maxBound::Int
+        lignore'    = get "listIgnore" d
+        lignore     = if isBool lignore'
+            then toBool lignore'
+            else False
+    in ListOpts lmin lmax lignore
 
 extractSafe :: Document -> Document -> Either String Document
 extractSafe doc rules =
-    mapRight dm $ mapM (\r@(key, rule) ->
-        if get "isList" rule == d True
-            then docMapToList key (mapM (\e -> validateVal e r builtins) (toList (get key doc)))
-            else M.liftM (\x -> (key, x)) (validateVal (get key doc) r builtins))
-        (map transFormR $ Map.toList rules)
+    CM.liftM dm $ sequence $ map fromJust $ filter isJust $ map (\r@(key, rule) ->
+        let subject = get key doc
+            toPair :: a -> b -> (a, b)
+            toPair key x = (key, x)
+            ret :: Bool -> Either a b -> Maybe (Either a b)
+            ret ignore x = if ignore && isLeft x
+                then Nothing
+                else Just x
+        in if get "isList" rule == d True
+            then
+                let listOpts = toListOpts rule
+                    eitherList'' = map (\e -> validateVal e r builtins) (toList subject)
+                    eitherList' = if listIgnore listOpts
+                        then filter isRight eitherList''
+                        else eitherList''
+                    eitherList = if length eitherList' < listMin listOpts || length eitherList' > listMax listOpts
+                        then [Left $ T.unpack key ++ " length is not proper " ++ show eitherList' ++ show listOpts]
+                        else eitherList'
+                    verdict = CM.liftM (\x -> toPair key $ d x) $ sequence eitherList
+                in ret (listIgnore listOpts) verdict
+            else
+                let ignore = if isBool $ get "ignore" rule
+                        then toBool $ get "ignore" rule
+                        else False
+                    verdict = CM.liftM (toPair key) (validateVal subject r builtins)
+                in ret ignore verdict
+        )
+        (map transformR $ Map.toList rules)
     where
     toList :: DocVal -> [DocVal]
-    toList d = case d of DocList l -> l; otherwise -> [d]
-    
-    docMapToList :: T.Text -> Either String [DocVal] -> Either String (T.Text, DocVal)
-    docMapToList key list = case list of
-        Left e      -> Left e
-        Right l     -> Right $ (key, DocList l)
-    
-    transFormR :: (T.Text, DocVal) -> (T.Text, Document)
-    transFormR a = case  a of
+    toList d = case d of
+        DocList l -> l
+        otherwise -> [d]
+    -- Transform the rules so we dont have to deal with the irregular
+    -- convenience formats at validation.
+    transformR :: (T.Text, DocVal) -> (T.Text, Document)
+    transformR a = case  a of
         (key, DocMap m)     -> if get "type" m == Nil
                                     then (key, set "type" m "string")
                                     else (key, m)

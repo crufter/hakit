@@ -6,7 +6,7 @@ module Hakit (
     
     -- * Convenience.
     isInt, toInt, isFloat, toFloat, isString, toString, isBool, toBool, isMap, toMap, isList, toList, isNil, toNil, len,
-    getString, getInt, getFloat, getBool, getMap, getList, getNil,
+    getString, getInt, getFloat, getBool, getMap, getList, getNil, isLeft, isRight,
     d, dt, dm, (.-), dbRef, oid, dbRefToStr, strToDbRef,
     nilDoc, e1, e2, e3,
     
@@ -65,7 +65,7 @@ data DocVal =   DocInt          Integer
                 deriving (Ord, Eq, Show)
 
 isInt a =       case a of DocInt b -> True; otherwise -> False
-toInt a =       case a of DocInt b -> a; otherwise -> error $ show a ++ " is not an Integer."
+toInt a =       case a of DocInt b -> b; otherwise -> error $ show a ++ " is not an Integer."
 isFloat a =     case a of DocFloat b -> True; otherwise -> False
 toFloat a =     case a of DocFloat b -> b; otherwise -> error $ show a ++ " is not a Float."
 isString a =    case a of DocString b -> True; otherwise -> False
@@ -136,6 +136,14 @@ infix 0 .-
 -- | Helps to easily create a document (compatible type), like ["name" .- "Joey"]
 (.-) :: DocValComp b => T.Text -> b -> (T.Text, DocVal)
 (.-) a b = (a, toDocVal b)
+
+isLeft :: Either a b -> Bool
+isLeft a = case a of
+    Left a -> True
+    Right a -> False
+
+isRight :: Either a b -> Bool
+isRight a = not $ isLeft a
 
 {--------------------------------------------------------------------
   Document operations.  
