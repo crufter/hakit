@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
 module Hakit.Extract (
-    extract, extractSafe, builtins
+    -- * Extraction
+    extract, extractSafe, builtins, Validator,
+    -- * Misc
+    listMin, listMax, listIgnore, min', max'
 ) where
 
 import Hakit
@@ -11,9 +14,25 @@ import qualified Data.Text as T
 import qualified Data.Map as Map
 import Data.Maybe (isJust, fromJust)
 
+{--------------------------------------------------------------------
+  Misc.  
+--------------------------------------------------------------------}
+
+-- Just to provide a little bit more type safety.
+listMin =       "listMin"       :: T.Text
+listMax =       "listMax"       :: T.Text
+listIgnore =    "listIgnore"    :: T.Text
+min' =          "min"           :: T.Text -- Bad name, but Prelude already has a min/max...
+max' =          "max"           :: T.Text
+
+{--------------------------------------------------------------------
+  Extraction.  
+--------------------------------------------------------------------}
+
 type Validator = T.Text -> DocVal -> Document -> Either String DocVal
 
 -- | Builtin validators.
+builtins :: [(T.Text, Validator)]
 builtins = [
     ("int", inter),
     ("float", floater),
@@ -103,8 +122,8 @@ validateVal docVal (key, rule) validators =
         Right x -> Right x
 
 data ListOpts = ListOpts {
-    listMin, listMax    :: Int,
-    listIgnore          :: Bool
+    lmin, lmax      :: Int,
+    lignore         :: Bool
 } deriving (Show)
 
 toListOpts :: Document -> ListOpts
@@ -137,14 +156,14 @@ extractSafe doc rules =
             then
                 let listOpts = toListOpts rule
                     eitherList'' = map (\e -> validateVal e r builtins) (toList subject)
-                    eitherList' = if listIgnore listOpts
+                    eitherList' = if lignore listOpts
                         then filter isRight eitherList''
                         else eitherList''
-                    eitherList = if length eitherList' < listMin listOpts || length eitherList' > listMax listOpts
+                    eitherList = if length eitherList' < lmin listOpts || length eitherList' > lmax listOpts
                         then [Left $ T.unpack key ++ " length is not proper " ++ show eitherList' ++ show listOpts]
                         else eitherList'
                     verdict = CM.liftM (\x -> toPair key $ d x) $ sequence eitherList
-                in ret (listIgnore listOpts) verdict
+                in ret (lignore listOpts) verdict
             else
                 let ignore = if isBool $ get "ignore" rule
                         then toBool $ get "ignore" rule
