@@ -20,7 +20,7 @@ import qualified Control.Exception as E
 import qualified Data.Time.Clock.POSIX as P
 import qualified Data.Time.Clock as Clock
 
--- Note: only the job execution, and the jobs themselves run in their own thread, every other functions blocks.
+-- Note: only the job execution, and the jobs themselves run in their own thread, every other function blocks.
 
 lock :: Scheduler -> IO ()
 lock s = MV.putMVar (m s) ()
@@ -145,7 +145,7 @@ stopExec :: Scheduler -> IO ()
 stopExec s = E.bracket_ (lock s) (unlock s) $ do
     intern <- unbox s
     if not $ running intern
-        then return () 
+        then return ()
         else do
             case threadId intern of
                 Just x  -> C.killThread x
