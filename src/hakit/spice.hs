@@ -1,14 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Template where
+module Hakit.Spice (
+    -- * Manipulation, querying
+    alter, remove, select,
+    -- * Types
+    Attr(..), Tag(..), Child(..)
+) where
 
 import qualified Data.Text as T
 import qualified Data.List as L
 import qualified Text.ParserCombinators.Parsec as P
-import qualified Data.List.Split as Spl
 
 -- This package contains some questionable temporary names now to avoid clash with prelude.
 
-data Attr = Attr (T.Text, T.Text)
+data Attr = Attr (T.Text, T.Text) deriving (Eq)
 
 instance Show Attr where
     show (Attr (a, b)) = T.unpack a ++ "=" ++ show b
@@ -20,6 +24,7 @@ data Tag =
     |   Text    T.Text  
     --          Name        Attributes  Children
     |   Tag     T.Text      [Attr]      [Child]
+    deriving (Eq)
 
 getAttrs :: Tag ->      [Attr]
 getAttrs (Doctype t)    = []
@@ -77,6 +82,10 @@ instance Show Tag where
     show (Tag n a b)    = "<" ++ T.unpack n ++ sa a ++ ">" ++ sc b ++ "</" ++ T.unpack n ++ ">"
     show (Text a)       = T.unpack a
 
+{--------------------------------------------------------------------
+  Selector implementation.  
+--------------------------------------------------------------------}
+
 -- | Just for quick and ugly testing.
 -- Tests if a (top level) tag satisfies a given selector
 -- (which can contain multiple criteria, like "div.className").
@@ -110,54 +119,89 @@ satisfiesSingle s tag = case s of
     Descendant      -> error $ "can't use descendant separator on: " ++ show tag
     DirectChild     -> error $ "can't use direct child separator on: " ++ show tag
 
-satisfies :: [Tag] -> Tag -> [[Selector]] -> Bool
+-- Returns true if given tag satisfies the selector(s) provided.
+-- Needs parents because of the " > " (direct child) and " " (descendant) relations.
+satisfies :: [Tag] -> Tag -> [Selector] -> Bool
 satisfies parents tag sels =
     let separator x = case x of
             Descendant  -> True
             DirectChild -> True
             otherwise   -> False
         nonseps = L.filter separator sels
-        -- ps = Parents satisfy
+        -- ps = Parents satisfy recursive
         -- Called with a sels list ending in a separator, and
         -- with sels' having even length. Eg: [selector, sep, selector, sep]
+        ps :: [Tag] -> [Selector] -> Bool
         ps parents sels'
-            | sels == []        = True
+            | sels' == []       = True
             | parents == []     = False     -- And sels /= []
             | otherwise         =
                 let sep = last sels'
-                    crit = last . last $ sels'
-                in case last sels' of
-                    Descendant      -> if satisfiesSingle $ last parents
-                        then ps (init . init $ sels') $ init parents
-                        else ps sels' $ init parents
-                    DirectChild     -> if satisfiesSingle $ last parents
-                        then ps (init . init $ sels') $ init parents
+                    crit = last . init $ sels'
+                in case sep of
+                    Descendant      -> if satisfiesSingle crit $ last parents
+                        then ps (init parents) (init . init $ sels')
+                        else ps (init parents) sels'
+                    DirectChild     -> if satisfiesSingle crit $ last parents
+                        then ps (init parents) (init . init $ sels')
                         else False
     -- Obviously if there are fewer parents than parent criterias, or the given tag does not
     -- satisfy the given criteria, we can stop.
-    in if not $ satisfiesSingle (last nonseps) tag || length parents < length nonseps - 1
+    in if length parents < length nonseps - 1 || (not $ satisfiesSingle (last nonseps) tag)
         then False
         else if length sels == 1
             then True
             -- We only get here if sels has an odd length, length sels > 1 
             else ps parents $ init sels
 
--- Apply function on elements matching the selector.
+{--------------------------------------------------------------------
+  Manipulation, querying.  
+--------------------------------------------------------------------}
+
+-- | Apply function on elements matching the selector.
 alter :: T.Text -> Tag -> (Tag -> Tag) -> Tag
 alter sel t f =
-    let sels = parseSelector t
-        selsGrouped = (Spl.split . Spl.oneOf) [Descendant, DirectChild] sels
+    let sels = parseSelector sel
         alterRec :: Tag -> [Tag] -> Tag
         alterRec tag parents = case tag of
             Doctype t       -> appif tag
             Text t          -> appif tag
-            Tag n a c       -> appif $ Tag n a $ map (\x -> alterRec (parents ++ [tag]) x) c
+            Tag n a c       -> appif $ Tag n a $ map (\x -> alterRec x $ parents ++ [tag]) c
             where
                 appif t =
-                    if satisfies parents tag selsGrouped
+                    if satisfies parents tag sels
                         then f t
                         else t
     in alterRec t []
+
+-- | Remove tags matching selector.
+-- Does not remove the provided tag itself.
+remove :: T.Text -> Tag -> Tag
+remove sel t =
+    let sels = parseSelector sel
+        removeRec :: Tag -> [Tag] -> Tag
+        removeRec tag parents = case tag of
+            Tag n a c   -> Tag n a $ map (\x -> removeRec x $ parents ++ [tag]) c
+            otherwise   -> tag
+    in removeRec t []
+
+-- | Returns tags matching the selector.
+-- Obiously not too useful if you want to alter the given elements, because
+-- of Haskell's purity. See alter and remove instead.
+select :: T.Text -> Tag -> [Tag]
+select sel t = 
+    let sels = parseSelector sel
+        selectRec :: Tag -> [Tag] -> [Tag]
+        selectRec tag parents = case tag of
+            Doctype t   -> retif tag
+            Text t      -> retif tag
+            Tag n a c   -> retif tag ++ (concat $ map (\x -> selectRec x $ parents ++ [tag]) c)
+            where
+                retif t =
+                    if satisfies parents tag sels
+                        then [t]
+                        else []
+    in selectRec t []
 
 {--------------------------------------------------------------------
   Selectors.  
@@ -169,9 +213,9 @@ alter sel t f =
 --                  *                           - everything
 -- Y                #X                          - id selector
 -- Y                .X                          - class selector
---                  X Y                         - descendant selector
+-- Y                X Y                         - descendant selector
 -- Y                X                           - type selector
---                  X > Y                       - direct child selector
+-- Y                X > Y                       - direct child selector
 -- Y                [attrName]                  - has attribute selector
 -- Y                [attrName="val"]            - attribute name-value selector
 -- Y                [attrName*="val"]           - regexp attribute selectors
@@ -187,7 +231,7 @@ data Regexy =
     |   Contains
     |   Equals
     |   Any
-    deriving (Show)
+    deriving (Eq, Show)
 
 data Selector =
         Type        T.Text
@@ -197,7 +241,7 @@ data Selector =
     -- These are more like relations between selectors and not selectors themselves, but hey.
     |   Descendant
     |   DirectChild
-    deriving (Show)
+    deriving (Eq, Show)
 
 {--------------------------------------------------------------------
   Parsering selectors.  
