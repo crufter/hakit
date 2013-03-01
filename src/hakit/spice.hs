@@ -1,21 +1,39 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Hakit.Spice (
-    -- * Manipulation, querying
+    -- * Tag creation
+    tag, doctype, html, head', body, div, text,
+    -- * Nested tag functions
     alter, remove, select,
+    -- * Single tag functions
+    attrs, attr, children, name, addClass, removeClass,
     -- * Types
-    Attr(..), Tag(..), Child(..)
+    Attrs(), Tag(..), Child(..),
+    -- * Exported for testing purposes only
+    matches
 ) where
 
 import qualified Data.Text as T
 import qualified Data.List as L
+import qualified Data.Map as M
 import qualified Text.ParserCombinators.Parsec as P
 
 -- This package contains some questionable temporary names now to avoid clash with prelude.
 
-data Attr = Attr (T.Text, T.Text) deriving (Eq)
+{--------------------------------------------------------------------
+  Types.  
+--------------------------------------------------------------------}
 
-instance Show Attr where
-    show (Attr (a, b)) = T.unpack a ++ "=" ++ show b
+-- For simplicity reasons, currently only attributes exist and no properties.
+data Attrs = Attrs (M.Map T.Text T.Text) deriving (Eq)
+
+toAttrs :: [(T.Text, T.Text)] -> Attrs
+toAttrs l = Attrs $ M.fromList l
+
+attrsToMap :: Attrs -> M.Map T.Text T.Text
+attrsToMap (Attrs at) = at
+
+instance Show Attrs where
+    show (Attrs at) = concat $ map (\(a, b) -> T.unpack a ++ "=" ++ show b) $ M.toList at
 
 type Child = Tag
 
@@ -23,54 +41,37 @@ data Tag =
         Doctype T.Text
     |   Text    T.Text  
     --          Name        Attributes  Children
-    |   Tag     T.Text      [Attr]      [Child]
+    |   Tag     T.Text      Attrs       [Child]
     deriving (Eq)
 
-getAttrs :: Tag ->      [Attr]
-getAttrs (Doctype t)    = []
-getAttrs (Text t)       = []
-getAttrs (Tag _ a _)    = a
+-- | Create any tag.
+tag n a c   = Tag n (toAttrs a) c
 
-getAttr :: Tag -> T.Text -> Maybe T.Text
-getAttr tag attrName = case L.find (\(Attr (a, b)) -> a == attrName) (getAttrs tag) of
-    Just (Attr (a, b))  -> Just b
-    Nothing             -> Nothing
-
-getChildren :: Tag ->       [Child]
-getChildren (Doctype t)     = []
-getChildren (Text t)        = []
-getChildren (Tag _ _ c)     = c
-
-getName :: Tag ->      T.Text
-getName (Doctype t)    = "doctype"
-getName (Text t)       = "text"
-getName (Tag n _ _)    = n
-
+-- Some frequently used tags here
 doctype a   = Doctype a
-html a c    = Tag "html" a c
-head' a c   = Tag "head" a c
-body a c    = Tag "body" a c
+html a c    = tag "html" a c
+head' a c   = tag "head" a c
+body a c    = tag "body" a c
 text t      = Text t
-div' a c    = Tag "div" a c
-tag n a c   = Tag n a c
+div' a c    = tag "div" a c
 
-attr :: T.Text -> T.Text -> Attr
-attr a b = Attr (a, b)
+-- | Create attribute.
+cat :: T.Text -> T.Text -> (T.Text, T.Text)
+cat a b = (a, b)
 
 example :: Tag
 example =
     html [] [
         head' [] [],
-        body [attr "style" "background: #ccc;"] [
+        body [cat "style" "background: #ccc;"] [
             text "Hello world."
         ]
     ]
 
 -- Show attributes
-sa :: [Attr] -> String
-sa x = let attrs = L.intercalate " " $ map show x in
-    if length attrs > 0
-        then " " ++ attrs
+sa :: Attrs -> String
+sa (Attrs at) = if M.size at > 0
+        then " " ++ show at
         else ""
 
 -- Show children.
@@ -81,6 +82,63 @@ instance Show Tag where
     show (Doctype a)    = "<!DOCTYPE " ++ T.unpack a ++ ">"
     show (Tag n a b)    = "<" ++ T.unpack n ++ sa a ++ ">" ++ sc b ++ "</" ++ T.unpack n ++ ">"
     show (Text a)       = T.unpack a
+
+{--------------------------------------------------------------------
+  Single tag functions.  
+--------------------------------------------------------------------}
+
+attrs :: Tag ->      Attrs
+attrs (Doctype t)    = toAttrs []
+attrs (Text t)       = toAttrs []
+attrs (Tag _ a _)    = a
+
+attr :: T.Text -> Tag -> Maybe T.Text
+attr attrName tag = case M.lookup attrName $ attrsToMap $ attrs tag of
+    Just v      -> Just v
+    Nothing     -> Nothing
+
+setAttr :: T.Text -> T.Text -> Tag -> Tag
+setAttr key val tag = case tag of
+    Doctype t           -> tag
+    Text t              -> tag
+    Tag n (Attrs a) c   -> Tag n (Attrs $ M.insert key val a) c
+
+children :: Tag ->       [Child]
+children (Doctype t)     = []
+children (Text t)        = []
+children (Tag _ _ c)     = c
+
+name :: Tag ->      T.Text
+name (Doctype t)    = "doctype"
+name (Text t)       = "text"
+name (Tag n _ _)    = n
+
+addClass :: T.Text -> Tag -> Tag
+addClass clas tag = case attr "class" tag of
+    Nothing     -> setAttr "class" clas tag
+    Just c      -> let spl = T.splitOn " " c in if elem clas spl
+        then tag
+        else setAttr "class" (T.intercalate " " $ clas:spl) tag
+
+hasClass :: T.Text -> Tag -> Bool
+hasClass clas tag = case attr "class" tag of
+    Nothing     -> False
+    Just c      -> let spl = T.splitOn " " c in elem clas spl
+
+removeClass :: T.Text -> Tag -> Tag
+removeClass clas tag = case attr "class" tag of
+    Nothing     -> tag
+    Just c      -> let spl = T.splitOn " " c in if elem clas spl
+        then setAttr "class" (T.intercalate " " $ filter (/= clas) spl) tag
+        else tag
+
+toggleClass :: T.Text -> Tag -> Tag
+toggleClass clas tag = case attr "class" tag of
+    Nothing     -> setAttr "class" clas tag
+    Just c      -> let spl = T.splitOn " " c in if elem clas spl
+        then setAttr "class" (T.intercalate " " $ filter (/= clas) spl) tag
+        else setAttr "class" (T.intercalate " " $ clas:spl) tag
+
 
 {--------------------------------------------------------------------
   Selector implementation.  
@@ -101,14 +159,14 @@ parseSelector t = let sels = P.parse parseExpr "selector" $ T.unpack t in
 
 satisfiesSingle :: Selector -> Tag -> Bool
 satisfiesSingle s tag = case s of
-    Type t  -> getName tag == t
-    Id  id  -> case getAttr tag "id" of
+    Type t  -> name tag == t
+    Id  id  -> case attr "id" tag of
         Just x  -> x == id
         Nothing -> False
-    Class c -> case getAttr tag "class" of
+    Class c -> case attr "class" tag of
         Just x  -> x == c
         Nothing  -> False
-    Attribute reg attrName attrVal -> case getAttr tag attrName of
+    Attribute reg attrName attrVal -> case attr attrName tag of
         Nothing -> False
         Just x  -> case reg of
             StartsWith  -> T.isPrefixOf attrVal x
@@ -155,35 +213,35 @@ satisfies parents tag sels =
             else ps parents $ init sels
 
 {--------------------------------------------------------------------
-  Manipulation, querying.  
+  Nested tag functions.  
 --------------------------------------------------------------------}
 
 -- | Apply function on elements matching the selector.
 alter :: T.Text -> Tag -> (Tag -> Tag) -> Tag
 alter sel t f =
     let sels = parseSelector sel
-        alterRec :: Tag -> [Tag] -> Tag
-        alterRec tag parents = case tag of
+        alterRec :: [Tag] -> Tag -> Tag
+        alterRec parents tag = case tag of
             Doctype t       -> appif tag
             Text t          -> appif tag
-            Tag n a c       -> appif $ Tag n a $ map (\x -> alterRec x $ parents ++ [tag]) c
+            Tag n a c       -> appif $ Tag n a $ map (alterRec $ parents ++ [tag]) c
             where
                 appif t =
                     if satisfies parents tag sels
                         then f t
                         else t
-    in alterRec t []
+    in alterRec [] t
 
 -- | Remove tags matching selector.
 -- Does not remove the provided tag itself.
 remove :: T.Text -> Tag -> Tag
 remove sel t =
     let sels = parseSelector sel
-        removeRec :: Tag -> [Tag] -> Tag
-        removeRec tag parents = case tag of
-            Tag n a c   -> Tag n a $ map (\x -> removeRec x $ parents ++ [tag]) c
+        removeRec :: [Tag] -> Tag -> Tag
+        removeRec parents tag = case tag of
+            Tag n a c   -> Tag n a $ map (removeRec $ parents ++ [tag]) c
             otherwise   -> tag
-    in removeRec t []
+    in removeRec [] t
 
 -- | Returns tags matching the selector.
 -- Obiously not too useful if you want to alter the given elements, because
@@ -191,17 +249,17 @@ remove sel t =
 select :: T.Text -> Tag -> [Tag]
 select sel t = 
     let sels = parseSelector sel
-        selectRec :: Tag -> [Tag] -> [Tag]
-        selectRec tag parents = case tag of
+        selectRec :: [Tag] -> Tag -> [Tag]
+        selectRec parents tag = case tag of
             Doctype t   -> retif tag
             Text t      -> retif tag
-            Tag n a c   -> retif tag ++ (concat $ map (\x -> selectRec x $ parents ++ [tag]) c)
+            Tag n a c   -> retif tag ++ (concat $ map (selectRec $ parents ++ [tag]) c)
             where
                 retif t =
                     if satisfies parents tag sels
                         then [t]
                         else []
-    in selectRec t []
+    in selectRec [] t
 
 {--------------------------------------------------------------------
   Selectors.  
@@ -221,6 +279,7 @@ select sel t =
 -- Y                [attrName*="val"]           - regexp attribute selectors
 -- Y                [attrName^="val"]  
 -- Y                [attrName$="val"]  
+--                  selector1, selector2        - multiple selectors
 --                  selector:not(selector)      - negation pseudoclass selector
 --                  selector:nth-child(3)   
 --                  selector:nth-last-child(3)  
