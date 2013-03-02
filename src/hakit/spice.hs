@@ -1,21 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Hakit.Spice (
     -- * Tag creation
-    tag, doctype, html, head', body, div, text,
+    tag, doctype, html, head', body, div', text, cat,
     -- * Nested tag functions
     alter, remove, select,
     -- * Single tag functions
-    attrs, attr, children, name, addClass, removeClass,
+    attrs, attr, children, name, addClass, removeClass, hasClass, toggleClass,
     -- * Types
     Attrs(), Tag(..), Child(..),
     -- * Exported for testing purposes only
-    matches
+    matches,
 ) where
 
 import qualified Data.Text as T
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Text.ParserCombinators.Parsec as P
+import qualified Data.List.Split as Spl
 
 -- This package contains some questionable temporary names now to avoid clash with prelude.
 
@@ -70,8 +71,8 @@ example =
 
 -- Show attributes
 sa :: Attrs -> String
-sa (Attrs at) = if M.size at > 0
-        then " " ++ show at
+sa a@(Attrs at) = if M.size at > 0
+        then " " ++ show a
         else ""
 
 -- Show children.
@@ -152,10 +153,15 @@ matches :: T.Text -> Tag -> Bool
 matches sel tag = all (flip satisfiesSingle $ tag) (parseSelector sel)
 
 parseSelector :: T.Text -> [Selector]
-parseSelector t = let sels = P.parse parseExpr "selector" $ T.unpack t in
-    case sels of
+parseSelector t =
+    let sels = P.parse parseExpr "selector" $ T.unpack t
+    in case sels of
         Left e      -> error $ show e
-        Right ss    -> ss
+        Right ss    -> let ws = (Spl.split . Spl.oneOf) [Descendant, DirectChild] ss
+            in map (\x -> if length x == 1
+                then x!!0
+                else And x
+                ) $ filter (\y -> length y > 0) ws
 
 satisfiesSingle :: Selector -> Tag -> Bool
 satisfiesSingle s tag = case s of
@@ -163,9 +169,7 @@ satisfiesSingle s tag = case s of
     Id  id  -> case attr "id" tag of
         Just x  -> x == id
         Nothing -> False
-    Class c -> case attr "class" tag of
-        Just x  -> x == c
-        Nothing  -> False
+    Class c -> hasClass c tag
     Attribute reg attrName attrVal -> case attr attrName tag of
         Nothing -> False
         Just x  -> case reg of
@@ -174,6 +178,7 @@ satisfiesSingle s tag = case s of
             Contains    -> T.isInfixOf attrVal x
             Equals      -> x == attrVal
             Any         -> True
+    And selectors   -> all ((flip satisfiesSingle) tag) selectors
     Descendant      -> error $ "can't use descendant separator on: " ++ show tag
     DirectChild     -> error $ "can't use direct child separator on: " ++ show tag
 
@@ -185,7 +190,7 @@ satisfies parents tag sels =
             Descendant  -> True
             DirectChild -> True
             otherwise   -> False
-        nonseps = L.filter separator sels
+        nonseps = L.filter (not . separator) sels
         -- ps = Parents satisfy recursive
         -- Called with a sels list ending in a separator, and
         -- with sels' having even length. Eg: [selector, sep, selector, sep]
@@ -203,6 +208,7 @@ satisfies parents tag sels =
                     DirectChild     -> if satisfiesSingle crit $ last parents
                         then ps (init parents) (init . init $ sels')
                         else False
+                    otherwise       -> error $ "spice: This is a bug, selector list here should end with separator: " ++ show sels'
     -- Obviously if there are fewer parents than parent criterias, or the given tag does not
     -- satisfy the given criteria, we can stop.
     in if length parents < length nonseps - 1 || (not $ satisfiesSingle (last nonseps) tag)
@@ -271,9 +277,9 @@ select sel t =
 --                  *                           - everything
 -- Y                #X                          - id selector
 -- Y                .X                          - class selector
--- Y                X Y                         - descendant selector
+-- Y                selector1 selector2         - descendant selector
 -- Y                X                           - type selector
--- Y                X > Y                       - direct child selector
+-- Y                selector1 > selector2       - direct child selector
 -- Y                [attrName]                  - has attribute selector
 -- Y                [attrName="val"]            - attribute name-value selector
 -- Y                [attrName*="val"]           - regexp attribute selectors
@@ -296,6 +302,9 @@ data Selector =
         Type        T.Text
     |   Id          T.Text
     |   Class       T.Text
+    -- Currently you can only apply flat selectors in an and.
+    -- (eg: no descendant or direct child)
+    |   And         [Selector]
     |   Attribute   Regexy T.Text T.Text     -- Regex type, tag name, attrname, attrval
     -- These are more like relations between selectors and not selectors themselves, but hey.
     |   Descendant

@@ -35,6 +35,7 @@ cases1 = [
         isRight
     ) -- List ignore, with it, the list member type mismatch disappears.
     ]
+
 t c = TestCase $ mapM_ (\c -> want (extractSafe (dm $ e1 c) (dm $ e2 c)) (e3 c (extractSafe (dm $ e1 c) (dm $ e2 c)) == True)) c
 testGet = t cases1
 
