@@ -9,7 +9,7 @@ module Hakit.Spice (
     -- * Types
     Attrs(), Tag(..), Child(..),
     -- * Exported for testing purposes only
-    matches,
+    matches, parseSelector
 ) where
 
 import qualified Data.Text as T
@@ -17,6 +17,7 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Text.ParserCombinators.Parsec as P
 import qualified Data.List.Split as Spl
+import Debug.Trace
 
 -- This package contains some questionable temporary names now to avoid clash with prelude.
 
@@ -32,9 +33,6 @@ toAttrs l = Attrs $ M.fromList l
 
 attrsToMap :: Attrs -> M.Map T.Text T.Text
 attrsToMap (Attrs at) = at
-
-instance Show Attrs where
-    show (Attrs at) = concat $ map (\(a, b) -> T.unpack a ++ "=" ++ show b) $ M.toList at
 
 type Child = Tag
 
@@ -69,6 +67,17 @@ example =
         ]
     ]
 
+{--------------------------------------------------------------------
+  Rendering.  
+--------------------------------------------------------------------}
+
+voidElements :: M.Map T.Text ()
+voidElements = M.fromList $ map (\x -> (x, ()))
+    ["area", "base", "br", "col", "embed", "hr", "img", "input", "keygen", "link", "menuitem", "meta", "param", "source", "track", "wbr"]
+
+instance Show Attrs where
+    show (Attrs at) = L.intercalate " " $ map (\(a, b) -> T.unpack a ++ "=" ++ show b) $ M.toList at
+
 -- Show attributes
 sa :: Attrs -> String
 sa a@(Attrs at) = if M.size at > 0
@@ -81,7 +90,9 @@ sc x = L.intercalate "\n" $ map show x
 
 instance Show Tag where
     show (Doctype a)    = "<!DOCTYPE " ++ T.unpack a ++ ">"
-    show (Tag n a b)    = "<" ++ T.unpack n ++ sa a ++ ">" ++ sc b ++ "</" ++ T.unpack n ++ ">"
+    show (Tag n a b)    = case M.lookup n voidElements of
+        Just ()     -> "<" ++ T.unpack n ++ sa a ++ "/>"
+        Nothing     -> "<" ++ T.unpack n ++ sa a ++ ">" ++ sc b ++ "</" ++ T.unpack n ++ ">"
     show (Text a)       = T.unpack a
 
 {--------------------------------------------------------------------
@@ -147,24 +158,12 @@ toggleClass clas tag = case attr "class" tag of
 
 -- | Just for quick and ugly testing.
 -- Tests if a (top level) tag satisfies a given selector
--- (which can contain multiple criteria, like "div.className").
--- Obviously selectors like "div a" or "div > a" won't work in this case.
 matches :: T.Text -> Tag -> Bool
-matches sel tag = all (flip satisfiesSingle $ tag) (parseSelector sel)
+matches sel tag = matches' [] (parseSelector sel) tag
 
-parseSelector :: T.Text -> [Selector]
-parseSelector t =
-    let sels = P.parse parseExpr "selector" $ T.unpack t
-    in case sels of
-        Left e      -> error $ show e
-        Right ss    -> let ws = (Spl.split . Spl.oneOf) [Descendant, DirectChild] ss
-            in map (\x -> if length x == 1
-                then x!!0
-                else And x
-                ) $ filter (\y -> length y > 0) ws
-
-satisfiesSingle :: Selector -> Tag -> Bool
-satisfiesSingle s tag = case s of
+-- Returns true if given tag matches the selector provided.
+matches' :: [Tag] -> Selector -> Tag -> Bool
+matches' parents s tag = case s of
     Type t  -> name tag == t
     Id  id  -> case attr "id" tag of
         Just x  -> x == id
@@ -177,46 +176,23 @@ satisfiesSingle s tag = case s of
             EndsWith    -> T.isSuffixOf attrVal x
             Contains    -> T.isInfixOf attrVal x
             Equals      -> x == attrVal
-            Any         -> True
-    And selectors   -> all ((flip satisfiesSingle) tag) selectors
-    Descendant      -> error $ "can't use descendant separator on: " ++ show tag
-    DirectChild     -> error $ "can't use direct child separator on: " ++ show tag
-
--- Returns true if given tag satisfies the selector(s) provided.
--- Needs parents because of the " > " (direct child) and " " (descendant) relations.
-satisfies :: [Tag] -> Tag -> [Selector] -> Bool
-satisfies parents tag sels =
-    let separator x = case x of
-            Descendant  -> True
-            DirectChild -> True
-            otherwise   -> False
-        nonseps = L.filter (not . separator) sels
-        -- ps = Parents satisfy recursive
-        -- Called with a sels list ending in a separator, and
-        -- with sels' having even length. Eg: [selector, sep, selector, sep]
-        ps :: [Tag] -> [Selector] -> Bool
-        ps parents sels'
-            | sels' == []       = True
-            | parents == []     = False     -- And sels /= []
-            | otherwise         =
-                let sep = last sels'
-                    crit = last . init $ sels'
-                in case sep of
-                    Descendant      -> if satisfiesSingle crit $ last parents
-                        then ps (init parents) (init . init $ sels')
-                        else ps (init parents) sels'
-                    DirectChild     -> if satisfiesSingle crit $ last parents
-                        then ps (init parents) (init . init $ sels')
-                        else False
-                    otherwise       -> error $ "spice: This is a bug, selector list here should end with separator: " ++ show sels'
-    -- Obviously if there are fewer parents than parent criterias, or the given tag does not
-    -- satisfy the given criteria, we can stop.
-    in if length parents < length nonseps - 1 || (not $ satisfiesSingle (last nonseps) tag)
+            Anything    -> True
+    And selectors   -> all (\x -> matches' parents x tag) selectors
+    Or selectors    -> any (\x -> matches' parents x tag) selectors
+    AncestorIs sel  -> if length parents == 0
         then False
-        else if length sels == 1
+        else if matches' (init parents) sel $ last parents
             then True
-            -- We only get here if sels has an odd length, length sels > 1 
-            else ps parents $ init sels
+            else matches' ((init . init) parents) sel $ (last . init) parents
+    ParentIs sel    -> if length parents == 0
+        then False
+        else matches' (init parents) sel $ last parents
+    Empty           -> length (children tag) == 0
+    Parent          -> length (children tag) /= 0
+    Any             -> True
+    -- 
+    Descendant      -> error $ "matches: bug: Descendant"
+    DirectChild     -> error $ "matches: bug: should never get to DirectChild"
 
 {--------------------------------------------------------------------
   Nested tag functions.  
@@ -233,19 +209,19 @@ alter sel t f =
             Tag n a c       -> appif $ Tag n a $ map (alterRec $ parents ++ [tag]) c
             where
                 appif t =
-                    if satisfies parents tag sels
+                    if matches' parents sels tag
                         then f t
                         else t
     in alterRec [] t
 
--- | Remove tags matching selector.
+-- | Remove tags matching the selector.
 -- Does not remove the provided tag itself.
 remove :: T.Text -> Tag -> Tag
 remove sel t =
     let sels = parseSelector sel
         removeRec :: [Tag] -> Tag -> Tag
         removeRec parents tag = case tag of
-            Tag n a c   -> Tag n a $ map (removeRec $ parents ++ [tag]) c
+            Tag n a c   -> Tag n a $ filter (matches' parents sels) $ map (removeRec $ parents ++ [tag]) c
             otherwise   -> tag
     in removeRec [] t
 
@@ -262,7 +238,7 @@ select sel t =
             Tag n a c   -> retif tag ++ (concat $ map (selectRec $ parents ++ [tag]) c)
             where
                 retif t =
-                    if satisfies parents tag sels
+                    if matches' parents sels tag
                         then [t]
                         else []
     in selectRec [] t
@@ -274,46 +250,103 @@ select sel t =
 -- Selectors planned
 
 -- Implemented      Example                     Description
---                  *                           - everything
+-- Y                *                           - matches any element
 -- Y                #X                          - id selector
 -- Y                .X                          - class selector
 -- Y                selector1 selector2         - descendant selector
 -- Y                X                           - type selector
 -- Y                selector1 > selector2       - direct child selector
--- Y                [attrName]                  - has attribute selector
+-- Y                [attrName]                  - has attribute selector [name]
 -- Y                [attrName="val"]            - attribute name-value selector
 -- Y                [attrName*="val"]           - regexp attribute selectors
 -- Y                [attrName^="val"]  
 -- Y                [attrName$="val"]  
---                  selector1, selector2        - multiple selectors
---                  selector:not(selector)      - negation pseudoclass selector
---                  selector:nth-child(3)   
---                  selector:nth-last-child(3)  
+-- Y                selector1, selector2        - multiple selectors
+--                  :not(selector)              - :not() selector
+--                  :eq(3)
+--                  :first
+--                  :last
+--                  :first-child
+--                  :last-child
+--                  :nth-child(3)   
+--                  :nth-last-child(3)
+-- Y                :empty
+-- Y                :parent
 
 data Regexy =
         StartsWith
     |   EndsWith
     |   Contains
     |   Equals
-    |   Any
+    |   Anything
     deriving (Eq, Show)
 
 data Selector =
         Type        T.Text
     |   Id          T.Text
     |   Class       T.Text
+    |   Eq          Int
+    |   Any | First | Last | Parent | Empty
+    |   FirstChild | LastChild | NthChild Int | NthLastChild Int
     -- Currently you can only apply flat selectors in an and.
     -- (eg: no descendant or direct child)
     |   And         [Selector]
+    |   Or          [Selector]
+    |   ParentIs    Selector
+    |   AncestorIs  Selector
     |   Attribute   Regexy T.Text T.Text     -- Regex type, tag name, attrname, attrval
-    -- These are more like relations between selectors and not selectors themselves, but hey.
+    -- Intermediate tokens
+    |   Comma
     |   Descendant
     |   DirectChild
     deriving (Eq, Show)
 
 {--------------------------------------------------------------------
-  Parsering selectors.  
+  Parsing selectors.  
 --------------------------------------------------------------------}
+
+parseSelector :: T.Text -> Selector
+parseSelector t =
+    let sels = P.parse parseExpr "selector" $ T.unpack t
+        orify :: [Selector] -> Selector
+        orify selects =
+            let ws :: [[Selector]]
+                ws = (Spl.split . Spl.dropDelims . Spl.oneOf) [Comma] selects
+                fws = filter (\y -> length y > 0) ws
+            in if length selects == 1
+                then selects!!0
+                else if length fws == 1
+                    then parentify $ head fws
+                    else Or $ map (\x -> if length x == 1
+                        then x!!0
+                        else parentify x) fws
+        parentify :: [Selector] -> Selector
+        parentify selects =
+            let checkValidity xs = if L.isInfixOf [Descendant, DirectChild] xs || L.isInfixOf [DirectChild, Descendant] xs
+                    then error $ "parseSelector: directchild or descendant tokens can't follow each other" ++ show xs
+                    else xs
+                ws :: [[Selector]]
+                ws = (Spl.split . Spl.oneOf) [Descendant, DirectChild] $ checkValidity selects
+                fws = filter (\y -> length y > 0) ws
+                -- [crit, sep, crit, sep, crit ... ]
+                build xs =
+                    let (crit, sep) = L.partition (\z -> z /= Descendant && z /= DirectChild) xs
+                        buildRec a b = if length b == 0
+                            then last a
+                            else case head b of
+                                Descendant      -> And [head a, AncestorIs $ buildRec (tail a) $ tail b]
+                                DirectChild     -> And [head a, ParentIs $ buildRec (tail a) $ tail b]
+                    in buildRec crit sep
+            in if length selects == 1
+                then selects!!0
+                else if length fws == 1
+                    then And $ head fws
+                    else build $ reverse $ map (\x -> if length x == 1
+                        then x!!0
+                        else And x) fws
+    in case sels of
+        Left e      -> error $ show e
+        Right ss    -> orify ss
 
 parseString :: P.Parser T.Text
 parseString = do
@@ -360,6 +393,30 @@ parseTyp = do
     typ <- parseNonquoted
     return $ Type typ
 
+parseCons :: P.Parser Selector
+parseCons = do
+    cons <- P.string ":parent" P.<|> P.string ":empty" P.<|> P.string ":last" P.<|> P.string ":first"
+            P.<|> P.string ":first-child" P.<|> P.string ":last-child"
+    return $ case cons of
+        ":parent"       -> Parent
+        ":empty"        -> Empty
+        ":last"         -> Last
+        ":first"        -> First
+        "*"             -> Any
+        ":first-child"  -> FirstChild
+        ":last-child"   -> LastChild
+
+-- parseNthChild :: P.Parser Selector
+-- parseNthChild = do
+--     P.string ":parent"
+
+parseComma :: P.Parser Selector
+parseComma = do
+    P.many P.space
+    P.char ','
+    P.many P.space
+    return Comma
+
 parseAttr :: P.Parser Selector
 parseAttr = do
     P.char '['
@@ -368,7 +425,7 @@ parseAttr = do
     val <- P.many $ parseNonquoted P.<|> parseString
     P.char ']'
     return $ case mode of
-        []          -> Attribute Any        attrName    ""
+        []          -> Attribute Anything   attrName    ""
         ["*="]      -> Attribute Contains   attrName    (val!!0)
         ["^="]      -> Attribute StartsWith attrName    (val!!0)
         ["$="]      -> Attribute EndsWith   attrName    (val!!0)
@@ -386,5 +443,7 @@ parseExpr = P.many1 $ P.try parseId
     P.<|> P.try parseTyp
     P.<|> P.try parseDirectChild
     P.<|> P.try parseDescendant
+    P.<|> P.try parseCons
+    P.<|> P.try parseComma
 
 -- > P.parse parseExpr "selector" "#id"

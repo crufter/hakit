@@ -56,6 +56,20 @@ cases2 = [
                 div' [cat "id" "t3", cat "class" "c3"] []
             ]
         ], [("#t1 #t2 #t3", 1), ("#t1 #t3", 1), ("#t1 > #t3", 0), ("#t1.c1 #t3.c3", 1), ("#t1.c11 #t3.c33", 0)]
+    ),
+    (
+        div' [cat "id" "t1", cat "class" "c1"] [
+            div' [cat "id" "t2", cat "class" "c2"] [
+                div' [cat "id" "t3", cat "class" "c3"] [
+                    div' [cat "id" "t4", cat "class" "c4"] []
+                ]
+            ],
+            div' [cat "id" "t21", cat "class" "c21"] [
+                div' [cat "id" "t31", cat "class" "c31"] [
+                    div' [cat "id" "t41", cat "class" "c41"] []
+                ]
+            ]
+        ], [("#t1 #t4", 1)]
     )
     ]
 
