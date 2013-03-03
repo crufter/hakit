@@ -69,7 +69,7 @@ cases2 = [
                     div' [cat "id" "t41", cat "class" "c41"] []
                 ]
             ]
-        ], [("#t1 #t4", 1)]
+        ], [("#t1 #t4", 1), ("div:first-child", 5)]
     )
     ]
 

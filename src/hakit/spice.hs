@@ -17,7 +17,6 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Text.ParserCombinators.Parsec as P
 import qualified Data.List.Split as Spl
-import Debug.Trace
 
 -- This package contains some questionable temporary names now to avoid clash with prelude.
 
@@ -161,6 +160,12 @@ toggleClass clas tag = case attr "class" tag of
 matches :: T.Text -> Tag -> Bool
 matches sel tag = matches' [] (parseSelector sel) tag
 
+-- Returns true of the tag or its descendants match the selector.
+has :: Selector -> Tag -> Bool
+has sel t = if matches' [] sel t
+    then True
+    else any (has sel) $ children t
+
 -- Returns true if given tag matches the selector provided.
 matches' :: [Tag] -> Selector -> Tag -> Bool
 matches' parents s tag = case s of
@@ -179,14 +184,31 @@ matches' parents s tag = case s of
             Anything    -> True
     And selectors   -> all (\x -> matches' parents x tag) selectors
     Or selectors    -> any (\x -> matches' parents x tag) selectors
+    Not selector    -> not $ matches' parents selector tag
+    Has selector    -> any (has selector) $ children tag
     AncestorIs sel  -> if length parents == 0
         then False
-        else if matches' (init parents) sel $ last parents
-            then True
-            else matches' ((init . init) parents) sel $ (last . init) parents
+        else let parinits = zip (L.inits parents) parents in
+            any (\(pars, subj) -> matches' pars sel subj) parinits   
     ParentIs sel    -> if length parents == 0
         then False
         else matches' (init parents) sel $ last parents
+    FirstChild      -> if length parents == 0
+        then False
+        else let ch = children $ last parents in if length ch == 0
+            then False
+            else last ch == tag
+    LastChild       -> if length parents == 0
+        then False
+        else (last $ children $ last parents) == tag
+    First           -> error "first not implemented yet."
+    Last            -> error "last not implemented yet."
+    NthChild n      -> let pc = children $ last parents in if length pc < n   -- Note that this selector is 1-indexed.
+        then False
+        else (pc!!(n - 1)) == tag
+    NthLastChild n  -> let pc = children $ last parents in if length pc < n
+        then False
+        else (pc!!(length pc - n - 1)) == tag 
     Empty           -> length (children tag) == 0
     Parent          -> length (children tag) /= 0
     Any             -> True
@@ -262,14 +284,15 @@ select sel t =
 -- Y                [attrName^="val"]  
 -- Y                [attrName$="val"]  
 -- Y                selector1, selector2        - multiple selectors
---                  :not(selector)              - :not() selector
+-- Y                :not(selector)              - :not() selector
+-- Y                :has(selector)              - :has() selector
 --                  :eq(3)
 --                  :first
 --                  :last
---                  :first-child
---                  :last-child
---                  :nth-child(3)   
---                  :nth-last-child(3)
+-- Y                :first-child
+-- Y                :last-child
+-- Y                :nth-child(3)   
+-- Y                :nth-last-child(3)
 -- Y                :empty
 -- Y                :parent
 
@@ -292,6 +315,8 @@ data Selector =
     -- (eg: no descendant or direct child)
     |   And         [Selector]
     |   Or          [Selector]
+    |   Not         Selector
+    |   Has         Selector
     |   ParentIs    Selector
     |   AncestorIs  Selector
     |   Attribute   Regexy T.Text T.Text     -- Regex type, tag name, attrname, attrval
@@ -307,46 +332,51 @@ data Selector =
 
 parseSelector :: T.Text -> Selector
 parseSelector t =
-    let sels = P.parse parseExpr "selector" $ T.unpack t
-        orify :: [Selector] -> Selector
-        orify selects =
-            let ws :: [[Selector]]
-                ws = (Spl.split . Spl.dropDelims . Spl.oneOf) [Comma] selects
-                fws = filter (\y -> length y > 0) ws
-            in if length selects == 1
-                then selects!!0
-                else if length fws == 1
-                    then parentify $ head fws
-                    else Or $ map (\x -> if length x == 1
-                        then x!!0
-                        else parentify x) fws
-        parentify :: [Selector] -> Selector
-        parentify selects =
-            let checkValidity xs = if L.isInfixOf [Descendant, DirectChild] xs || L.isInfixOf [DirectChild, Descendant] xs
-                    then error $ "parseSelector: directchild or descendant tokens can't follow each other" ++ show xs
-                    else xs
-                ws :: [[Selector]]
-                ws = (Spl.split . Spl.oneOf) [Descendant, DirectChild] $ checkValidity selects
-                fws = filter (\y -> length y > 0) ws
-                -- [crit, sep, crit, sep, crit ... ]
-                build xs =
-                    let (crit, sep) = L.partition (\z -> z /= Descendant && z /= DirectChild) xs
-                        buildRec a b = if length b == 0
-                            then last a
-                            else case head b of
-                                Descendant      -> And [head a, AncestorIs $ buildRec (tail a) $ tail b]
-                                DirectChild     -> And [head a, ParentIs $ buildRec (tail a) $ tail b]
-                    in buildRec crit sep
-            in if length selects == 1
-                then selects!!0
-                else if length fws == 1
-                    then And $ head fws
-                    else build $ reverse $ map (\x -> if length x == 1
-                        then x!!0
-                        else And x) fws
+    let errMsg = "parseSelector: can't parse selector: " ++ show t
+        sels = P.parse parseExpr errMsg $ T.unpack t
     in case sels of
         Left e      -> error $ show e
-        Right ss    -> orify ss
+        Right ss    -> parseSelector' ss
+
+parseSelector' :: [Selector] -> Selector
+parseSelector' sels = orify sels
+    where
+    orify :: [Selector] -> Selector
+    orify selects =
+        let ws :: [[Selector]]
+            ws = (Spl.split . Spl.dropDelims . Spl.oneOf) [Comma] selects
+            fws = filter (\y -> length y > 0) ws
+        in if length selects == 1
+            then selects!!0
+            else if length fws == 1
+                then parentify $ head fws
+                else Or $ map (\x -> if length x == 1
+                    then x!!0
+                    else parentify x) fws
+    parentify :: [Selector] -> Selector
+    parentify selects =
+        let checkValidity xs = if L.isInfixOf [Descendant, DirectChild] xs || L.isInfixOf [DirectChild, Descendant] xs
+                then error $ "parseSelector: directchild or descendant tokens can't follow each other" ++ show xs
+                else xs
+            ws :: [[Selector]]
+            ws = (Spl.split . Spl.oneOf) [Descendant, DirectChild] $ checkValidity selects
+            fws = filter (\y -> length y > 0) ws
+            -- [crit, sep, crit, sep, crit ... ]
+            build xs =
+                let (crit, sep) = L.partition (\z -> z /= Descendant && z /= DirectChild) xs
+                    buildRec a b = if length b == 0
+                        then last a
+                        else case head b of
+                            Descendant      -> And [head a, AncestorIs $ buildRec (tail a) $ tail b]
+                            DirectChild     -> And [head a, ParentIs $ buildRec (tail a) $ tail b]
+                in buildRec crit sep
+        in if length selects == 1
+            then selects!!0
+            else if length fws == 1
+                then And $ head fws
+                else build $ reverse $ map (\x -> if length x == 1
+                    then x!!0
+                    else And x) fws
 
 parseString :: P.Parser T.Text
 parseString = do
@@ -395,20 +425,38 @@ parseTyp = do
 
 parseCons :: P.Parser Selector
 parseCons = do
-    cons <- P.string ":parent" P.<|> P.string ":empty" P.<|> P.string ":last" P.<|> P.string ":first"
-            P.<|> P.string ":first-child" P.<|> P.string ":last-child"
-    return $ case cons of
-        ":parent"       -> Parent
-        ":empty"        -> Empty
-        ":last"         -> Last
-        ":first"        -> First
-        "*"             -> Any
-        ":first-child"  -> FirstChild
-        ":last-child"   -> LastChild
+    c <- P.char '*' P.<|> P.char ':'
+    case c of
+        '*'     -> return Any
+        ':'     -> do
+            cons <- P.string "empty" P.<|> P.string "parent"
+                P.<|> P.string "first-child" P.<|> P.string "last-child"
+                P.<|> P.string "first" P.<|> P.string "last"
+            return $ case cons of
+                "parent"       -> Parent
+                "empty"        -> Empty
+                "last"         -> Last
+                "first"        -> First
+                "first-child"  -> FirstChild
+                "last-child"   -> LastChild
 
--- parseNthChild :: P.Parser Selector
--- parseNthChild = do
---     P.string ":parent"
+parseNthChild :: P.Parser Selector
+parseNthChild = do
+    a <- P.string ":nth-child(" P.<|> P.string ":nth-last-child("
+    num <- P.many1 P.digit
+    P.char ')'
+    return $ case a of
+        ":nth-child("       -> NthChild     $ ((read num)::Int)
+        ":nth-last-child("  -> NthLastChild $ ((read num)::Int)
+
+parseNotHas :: P.Parser Selector
+parseNotHas = do
+    a <- P.string ":not(" P.<|> P.string ":has("
+    sels <- parseExpr
+    P.string ")"
+    return $ case a of
+        ":not("     -> Not $ parseSelector' sels
+        ":has("     -> Has $ parseSelector' sels
 
 parseComma :: P.Parser Selector
 parseComma = do
@@ -445,5 +493,7 @@ parseExpr = P.many1 $ P.try parseId
     P.<|> P.try parseDescendant
     P.<|> P.try parseCons
     P.<|> P.try parseComma
+    P.<|> P.try parseNthChild
+    P.<|> parseNotHas
 
 -- > P.parse parseExpr "selector" "#id"
