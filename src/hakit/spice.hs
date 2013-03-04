@@ -166,6 +166,17 @@ has sel t = if matches' [] sel t
     then True
     else any (has sel) $ children t
 
+calcRoot :: [Tag] -> Tag -> Tag
+calcRoot parents tag = if length parents == 0
+    then tag
+    else parents!!0
+
+filtIndex :: (Int -> Bool) -> [a] -> [a]
+filtIndex pred xs =
+    let indexes = [0 ..(length xs) - 1]
+        iterable = zip indexes xs
+    in map (\(_, b) -> b) $ filter (\(a, _) -> pred a) iterable
+
 -- Returns true if given tag matches the selector provided.
 matches' :: [Tag] -> Selector -> Tag -> Bool
 matches' parents s tag = case s of
@@ -197,24 +208,63 @@ matches' parents s tag = case s of
         then False
         else let ch = children $ last parents in if length ch == 0
             then False
-            else last ch == tag
-    LastChild       -> if length parents == 0
-        then False
-        else (last $ children $ last parents) == tag
-    First           -> error "first not implemented yet."
-    Last            -> error "last not implemented yet."
-    NthChild n      -> let pc = children $ last parents in if length pc < n   -- Note that this selector is 1-indexed.
-        then False
-        else (pc!!(n - 1)) == tag
-    NthLastChild n  -> let pc = children $ last parents in if length pc < n
-        then False
-        else (pc!!(length pc - n - 1)) == tag 
+            else head ch == tag
+    LastChild       ->
+        let pc = children $ last parents
+        in if length parents == 0 || length pc == 1 -- A children can not be the first and last too at the same time.
+            then False
+            else last pc == tag
+    Eq selector n   ->
+        let root = calcRoot parents tag
+            tm = take (n+1) $ select' selector root
+        in if length tm <= n
+            then False
+            else (tm!!n) == tag
+    -- Revisit this.
+    LesserThan s n  ->
+        let root = calcRoot parents tag
+            tm = take n $ select' s root
+        in any (== tag) tm
+    GreaterThan s n ->
+        let root = calcRoot parents tag
+            tm = drop (n + 1) $ select' s root
+        in any (== tag) tm
+    First selector  ->
+        let root = calcRoot parents tag
+            tm = take 1 $ select' selector root
+        in any (== tag) tm
+    Last selector   ->
+        let root = calcRoot parents tag
+            tm = select' selector root
+        in if length tm == 0
+            then False
+            else last tm == tag
+    Even selector   ->
+        let root = calcRoot parents tag
+            tm = filtIndex (\x -> x `mod` 2 == 0) $ select' selector root
+        in any (== tag) tm
+    Odd selector    ->
+        let root = calcRoot parents tag
+            tm = filtIndex (\x -> x `mod` 2 == 1) $ select' selector root
+        in any (== tag) tm
+    NthChild n      ->
+        let pc = children $ last parents
+        in if length parents == 0 || length pc < n   -- Note that this selector is 1-indexed.
+            then False
+            else (pc!!(n - 1)) == tag
+    NthLastChild n  ->
+        let pc = children $ last parents
+        in if length parents == 0 || length pc < n
+            then False
+            else (pc!!(length pc - n - 1)) == tag 
     Empty           -> length (children tag) == 0
     Parent          -> length (children tag) /= 0
     Any             -> True
     -- 
-    Descendant      -> error $ "matches: bug: Descendant"
-    DirectChild     -> error $ "matches: bug: should never get to DirectChild"
+    Descendant      -> error $ "matches': bug: Descendant"
+    DirectChild     -> error $ "matches': bug: DirectChild"
+    Placeholder     -> error $ "matches': bug: Placeholder"
+    Comma           -> error $ "matches': bug: Comma"
 
 {--------------------------------------------------------------------
   Nested tag functions.  
@@ -251,16 +301,18 @@ remove sel t =
 -- Obiously not too useful if you want to alter the given elements, because
 -- of Haskell's purity. See alter and remove instead.
 select :: T.Text -> Tag -> [Tag]
-select sel t = 
-    let sels = parseSelector sel
-        selectRec :: [Tag] -> Tag -> [Tag]
+select sel t = let sels = parseSelector sel in select' sels t
+
+select' :: Selector -> Tag -> [Tag]
+select' sel t = 
+    let selectRec :: [Tag] -> Tag -> [Tag]
         selectRec parents tag = case tag of
             Doctype t   -> retif tag
             Text t      -> retif tag
             Tag n a c   -> retif tag ++ (concat $ map (selectRec $ parents ++ [tag]) c)
             where
                 retif t =
-                    if matches' parents sels tag
+                    if matches' parents sel tag
                         then [t]
                         else []
     in selectRec [] t
@@ -282,13 +334,19 @@ select sel t =
 -- Y                [attrName="val"]            - attribute name-value selector
 -- Y                [attrName*="val"]           - regexp attribute selectors
 -- Y                [attrName^="val"]  
--- Y                [attrName$="val"]  
+-- Y                [attrName$="val"]
+-- Y                [attrName~="val"]
+-- Y                [attrName!="val"]
 -- Y                selector1, selector2        - multiple selectors
 -- Y                :not(selector)              - :not() selector
 -- Y                :has(selector)              - :has() selector
---                  :eq(3)
---                  :first
---                  :last
+-- Y                :eq(3)
+-- Y                :lt(3)
+-- Y                :gt(3)
+-- Y                :even
+-- Y                :odd
+-- Y                :first
+-- Y                :last
 -- Y                :first-child
 -- Y                :last-child
 -- Y                :nth-child(3)   
@@ -302,14 +360,19 @@ data Regexy =
     |   Contains
     |   Equals
     |   Anything
+    |   ContainsWord
+    |   NotEquals
     deriving (Eq, Show)
 
 data Selector =
-        Type        T.Text
+        Any
+    |   Type        T.Text
     |   Id          T.Text
     |   Class       T.Text
-    |   Eq          Int
-    |   Any | First | Last | Parent | Empty
+    |   Eq Selector Int | Even Selector | Odd Selector
+    |   LesserThan Selector Int | GreaterThan Selector Int
+    |   First Selector | Last Selector
+    |   Parent | Empty
     |   FirstChild | LastChild | NthChild Int | NthLastChild Int
     -- Currently you can only apply flat selectors in an and.
     -- (eg: no descendant or direct child)
@@ -324,6 +387,7 @@ data Selector =
     |   Comma
     |   Descendant
     |   DirectChild
+    |   Placeholder
     deriving (Eq, Show)
 
 {--------------------------------------------------------------------
@@ -341,6 +405,8 @@ parseSelector t =
 parseSelector' :: [Selector] -> Selector
 parseSelector' sels = orify sels
     where
+    -- Transforms the flat structure selector1, or, selector2 to
+    -- a nested or(selector1, selector2)
     orify :: [Selector] -> Selector
     orify selects =
         let ws :: [[Selector]]
@@ -353,17 +419,19 @@ parseSelector' sels = orify sels
                 else Or $ map (\x -> if length x == 1
                     then x!!0
                     else parentify x) fws
+    -- Transforms the flat structure selector1 relation selector 2
+    -- to a nested and(selector2, (relation(selector1)))
     parentify :: [Selector] -> Selector
     parentify selects =
         let checkValidity xs = if L.isInfixOf [Descendant, DirectChild] xs || L.isInfixOf [DirectChild, Descendant] xs
-                then error $ "parseSelector: directchild or descendant tokens can't follow each other" ++ show xs
+                then error $ "parseSelector': directchild and descendant tokens can't follow each other" ++ show xs
                 else xs
             ws :: [[Selector]]
             ws = (Spl.split . Spl.oneOf) [Descendant, DirectChild] $ checkValidity selects
             fws = filter (\y -> length y > 0) ws
             -- [crit, sep, crit, sep, crit ... ]
             build xs =
-                let (crit, sep) = L.partition (\z -> z /= Descendant && z /= DirectChild) xs
+                let (crit, sep) = L.partition (\z -> z /= Descendant && z /= DirectChild) $ reverse xs
                     buildRec a b = if length b == 0
                         then last a
                         else case head b of
@@ -373,10 +441,56 @@ parseSelector' sels = orify sels
         in if length selects == 1
             then selects!!0
             else if length fws == 1
-                then And $ head fws
-                else build $ reverse $ map (\x -> if length x == 1
+                then indexify $ head fws
+                else build $ map (\x -> if length x == 1
                     then x!!0
-                    else And x) fws
+                    else indexify x) fws
+    -- Transforms
+    -- sel1 ind -> ind(sel)
+    -- sel1 ind sel2 -> and(ind(sel1), sel2)
+    indexify :: [Selector] -> Selector
+    indexify selects =
+        let isInd x = case x of
+                Eq _  _             -> True
+                Even _              -> True
+                Odd _               -> True
+                First _             -> True
+                Last _              -> True
+                LesserThan _ _      -> True
+                GreaterThan _ _     -> True
+                otherwise           -> False
+            setCrit x v = case x of
+                Eq s  i             -> Eq v i
+                LesserThan s i      -> LesserThan v i
+                GreaterThan s i     -> GreaterThan v i
+                Even s              -> Even v
+                Odd s               -> Odd v
+                First s             -> First v
+                Last s              -> Last v
+                otherwise           -> x
+            ws :: [[Selector]]
+            ws = (Spl.split . Spl.whenElt) isInd selects
+            fws = filter (\y -> length y > 0) ws
+            build xs = if not $ isInd $ last xs
+                then And [last xs, buildRec $ reverse $ init xs]
+                else buildRec $ reverse xs
+                where
+                buildRec xs = if length xs == 1
+                    then if isInd (xs!!0)
+                        then setCrit (xs!!0) Any
+                        else xs!!0
+                    else setCrit (xs!!0) $ buildRec $ tail xs
+        in if length selects == 1
+            then selects!!0
+            else if length fws == 1
+                then andify $ head fws
+                else build $ map (\x -> if length x == 1
+                    then x!!0
+                    else andify x) fws
+    andify :: [Selector] -> Selector
+    andify selects = if length selects == 1
+        then selects!!0
+        else And selects
 
 parseString :: P.Parser T.Text
 parseString = do
@@ -423,35 +537,45 @@ parseTyp = do
     typ <- parseNonquoted
     return $ Type typ
 
+ts x = P.try $ P.string x
+
 parseCons :: P.Parser Selector
 parseCons = do
     c <- P.char '*' P.<|> P.char ':'
     case c of
         '*'     -> return Any
         ':'     -> do
-            cons <- P.string "empty" P.<|> P.string "parent"
-                P.<|> P.string "first-child" P.<|> P.string "last-child"
+            cons <- ts "empty" P.<|> P.string "parent"
+                P.<|> ts "first-child" P.<|> ts "last-child"
                 P.<|> P.string "first" P.<|> P.string "last"
+                P.<|> P.string "even" P.<|> P.string "odd"
             return $ case cons of
-                "parent"       -> Parent
-                "empty"        -> Empty
-                "last"         -> Last
-                "first"        -> First
-                "first-child"  -> FirstChild
-                "last-child"   -> LastChild
+                "parent"        -> Parent
+                "empty"         -> Empty
+                "last"          -> Last Placeholder
+                "first"         -> First Placeholder
+                "first-child"   -> FirstChild
+                "last-child"    -> LastChild
+                "even"          -> Even Placeholder
+                "odd"           -> Odd Placeholder
 
-parseNthChild :: P.Parser Selector
-parseNthChild = do
-    a <- P.string ":nth-child(" P.<|> P.string ":nth-last-child("
+parseNthChildEq :: P.Parser Selector
+parseNthChildEq = do
+    a <- ts ":nth-child(" P.<|> ts ":nth-last-child(" P.<|> ts ":eq("
+        P.<|> ts ":lt(" P.<|> ts ":gt("
     num <- P.many1 P.digit
     P.char ')'
-    return $ case a of
-        ":nth-child("       -> NthChild     $ ((read num)::Int)
-        ":nth-last-child("  -> NthLastChild $ ((read num)::Int)
+    return $ let n = (read num)::Int in case a of
+        ":nth-child("       -> NthChild     n
+        ":nth-last-child("  -> NthLastChild n
+        ":eq("              -> Eq           Placeholder n
+        ":lt("              -> LesserThan   Placeholder n
+        ":gt("              -> GreaterThan  Placeholder n
+        
 
 parseNotHas :: P.Parser Selector
 parseNotHas = do
-    a <- P.string ":not(" P.<|> P.string ":has("
+    a <- ts ":not(" P.<|> ts ":has("
     sels <- parseExpr
     P.string ")"
     return $ case a of
@@ -469,21 +593,27 @@ parseAttr :: P.Parser Selector
 parseAttr = do
     P.char '['
     attrName <- parseNonquoted
-    mode <- P.many $ P.string "*=" P.<|> P.string "^=" P.<|> P.string "$=" P.<|> P.string "="
+    mode <- P.many $ P.string "*=" P.<|> P.string "^="
+        P.<|> P.string "$=" P.<|> P.string "="
+        P.<|> P.string "~=" P.<|> P.string "!="
     val <- P.many $ parseNonquoted P.<|> parseString
     P.char ']'
     return $ case mode of
-        []          -> Attribute Anything   attrName    ""
-        ["*="]      -> Attribute Contains   attrName    (val!!0)
-        ["^="]      -> Attribute StartsWith attrName    (val!!0)
-        ["$="]      -> Attribute EndsWith   attrName    (val!!0)
-        ["="]       -> Attribute Equals     attrName    (f val)
+        []          -> Attribute Anything       attrName    ""
+        ["*="]      -> Attribute Contains       attrName    (val!!0)
+        ["^="]      -> Attribute StartsWith     attrName    (val!!0)
+        ["$="]      -> Attribute EndsWith       attrName    (val!!0)
+        ["~="]      -> Attribute ContainsWord   attrName    (val!!0)
+        ["!="]      -> Attribute NotEquals      attrName    (val!!0)
+        ["="]       -> Attribute Equals         attrName    (f val)
     where
         f :: [T.Text] -> T.Text
         f x = if length x == 0
             then ""
             else x!!0
 
+-- While try is not required everywhere,
+-- they are there for simplicity and easier extendability.
 parseExpr :: P.Parser [Selector]
 parseExpr = P.many1 $ P.try parseId
     P.<|> P.try parseClass
@@ -493,7 +623,7 @@ parseExpr = P.many1 $ P.try parseId
     P.<|> P.try parseDescendant
     P.<|> P.try parseCons
     P.<|> P.try parseComma
-    P.<|> P.try parseNthChild
-    P.<|> parseNotHas
+    P.<|> P.try parseNthChildEq
+    P.<|> P.try parseNotHas
 
 -- > P.parse parseExpr "selector" "#id"

@@ -69,11 +69,33 @@ cases2 = [
                     div' [cat "id" "t41", cat "class" "c41"] []
                 ]
             ]
-        ], [("#t1 #t4", 1), ("div:first-child", 5)]
+        ],
+        [
+            ("#t1 #t4", 1), ("div:first-child", 5), ("div:last-child", 1), ("div:nth-child(2)", 1),
+            (".c1:has(.c4)", 1), (":empty", 2), (":parent", 5), ("div:not(:parent)", 2), ("div:not(:empty)", 5),
+            (".c1, .c2, .c21", 3)
+        ]
+    ),
+    (
+        html [cat "id" "t1"] [
+            div' [cat "class" "c1"] [],
+            div' [cat "class" "c2"] [],
+            div' [cat "class" "c3"] [],
+            div' [cat "class" "c4"] [],
+            div' [cat "class" "c5"] [],
+            div' [cat "class" "c6"] [],
+            div' [cat "class" "c7"] [],
+            div' [cat "class" "c8"] []
+        ],
+        [
+            ("div", 8), ("div:eq(3)", 1), ("div:gt(0)", 7), ("div:gt(6)", 1), ("div:lt(0)", 0),
+            ("div:lt(1)", 1), ("div:lt(7)", 7), ("div:first", 1), ("div:last", 1),
+            ("div:even", 4), ("div:odd", 4)
+        ]
     )
     ]
 
-testSelect = TestCase $ mapM_ (\(tag, checks) -> mapM_ (\c -> want (c, tag) ((length $ select (fst c) tag) == snd c)) checks) cases2
+testSelect = TestCase $ mapM_ (\(tag, checks) -> mapM_ (\c -> want (c, length $ select (fst c) tag, tag) ((length $ select (fst c) tag) == snd c)) checks) cases2
 
 tests = TestList [
     TestLabel "testMatches" testMatches,
