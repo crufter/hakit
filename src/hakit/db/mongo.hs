@@ -1,11 +1,13 @@
 {-# LANGUAGE FlexibleInstances, OverloadedStrings #-}
-module Hakit.Mongo (
-    Db(), new
+module Hakit.Db.Mongo (
+    Db(..),
+    new
 ) where
 
 import Control.Monad (liftM)
 import qualified Database.MongoDB as Mdb
 import qualified Hakit
+import qualified Hakit.Db as HD
 import qualified Data.Text as T
 import qualified Data.ByteString as S
 import qualified Data.List.Split as Spl
@@ -105,28 +107,28 @@ genSel hakitDoc coll = Mdb.select (fromDoc (stripDoc hakitDoc)) coll
 -- find, findOne
 genQuery :: Hakit.Document -> T.Text -> Mdb.Query
 genQuery hakitDoc coll =
-    let (specDoc, doc) = Hakit.specials hakitDoc
-        spec = Hakit.docToSpecials specDoc
+    let (specDoc, doc) = HD.specials hakitDoc
+        spec = HD.docToSpecials specDoc
         select = Mdb.select (fromDoc doc) coll
-        setSort sel = if length (Hakit.sort spec) > 0
-            then sel{Mdb.sort=(fromDoc (Hakit.toDocStyleSort (Hakit.sort spec)))}
+        setSort sel = if length (HD.sort spec) > 0
+            then sel{Mdb.sort=(fromDoc (HD.toDocStyleSort (HD.sort spec)))}
             else sel
-        setLimit sel = if Hakit.limit spec > 0
-            then sel{Mdb.limit=(fromIntegral (Hakit.limit spec)::W.Word32)}
+        setLimit sel = if HD.limit spec > 0
+            then sel{Mdb.limit=(fromIntegral (HD.limit spec)::W.Word32)}
             else sel
-        setSkip sel = if Hakit.skip spec > 0
-            then sel{Mdb.skip=(fromIntegral (Hakit.skip spec)::W.Word32)}
-            else if Hakit.page spec > 0
-                then sel{Mdb.skip=(fromIntegral (Hakit.page spec)::W.Word32) * safeDec (fromIntegral (Hakit.limit spec)::W.Word32)}
+        setSkip sel = if HD.skip spec > 0
+            then sel{Mdb.skip=(fromIntegral (HD.skip spec)::W.Word32)}
+            else if HD.page spec > 0
+                then sel{Mdb.skip=(fromIntegral (HD.page spec)::W.Word32) * safeDec (fromIntegral (HD.limit spec)::W.Word32)}
                 else sel
         in
     (setSort . setLimit . setSkip) select
 
 merge def new = M.union new def
-detLocation defLoc origiDoc = let loc = Hakit.loc $ Hakit.docToSpecials (fst (Hakit.specials origiDoc)) in
+detLocation defLoc origiDoc = let loc = HD.loc $ HD.docToSpecials (fst (HD.specials origiDoc)) in
     merge defLoc loc
 getColl :: Db -> Hakit.Document -> T.Text
-getColl db doc = let (spec, _) = Hakit.specials doc in Hakit.getString "coll" $ detLocation (location db) spec
+getColl db doc = let (spec, _) = HD.specials doc in Hakit.getString "coll" $ detLocation (location db) spec
 fromJust x = case x of Just l -> l; otherwise -> error "Can't convert from Just."
 
 runAction (Db conns def) origiDoc action =
@@ -141,7 +143,7 @@ update' db sel mod = do
     r <- runAction db sel $ Mdb.modify (genSel sel (getColl db sel)) (fromDoc mod)
     return $ fromRight r
 
-instance Hakit.Db Db where
+instance HD.Db Db where
     location db = M.empty
     connect (Db conns loc) m2 = do
         let m1 = Hakit.toDoc m2
@@ -178,7 +180,7 @@ instance Hakit.Db Db where
             pip = fromJust $ M.lookup serverName conns
         Mdb.runIOE $ Mdb.access pip Mdb.master dbName (Mdb.dropDatabase dbName)
         return ()
-    dropCurrent db = Hakit.dropDb db (M.empty::M.Map T.Text Hakit.DocVal)
+    dropCurrent db = HD.dropDb db (M.empty::M.Map T.Text Hakit.DocVal)
     servers db = []
     setLocation (Db conns loc) doc = Db conns $ M.union (Hakit.toDoc doc) loc
     insert db doc1 = do

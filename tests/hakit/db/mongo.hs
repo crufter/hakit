@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
-module Tests.Hakit.Mongo where
+module Tests.Hakit.Db.Mongo where
 
 import Test.HUnit
-import qualified Hakit.Mongo as M
+import Hakit.Db.Mongo
 import Hakit
 import qualified Data.Text as T
 import qualified Safe

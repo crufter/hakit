@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
-module Tests.Hakit.Extract where
+module Tests.Hakit.Validation where
 
 import Test.HUnit
 import Hakit
-import Hakit.Extract
+import Hakit.Validation
 
 want what verdict = assertBool (show what) verdict
 
@@ -36,7 +36,7 @@ cases1 = [
     ) -- List ignore, with it, the list member type mismatch disappears.
     ]
 
-t c = TestCase $ mapM_ (\c -> want (extractSafe (dm $ e1 c) (dm $ e2 c)) (e3 c (extractSafe (dm $ e1 c) (dm $ e2 c)) == True)) c
+t c = TestCase $ mapM_ (\c -> want (validateSafe (dm $ e1 c) (dm $ e2 c)) (e3 c (validateSafe (dm $ e1 c) (dm $ e2 c)) == True)) c
 testGet = t cases1
 
 tests = TestList [

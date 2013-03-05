@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
-module Hakit.Extract (
-    -- * Extraction
-    extract, extractSafe, builtins, Validator,
+module Hakit.Validation (
+    -- * Validation
+    validate, validateSafe, builtins, Validator,
     -- * Misc
     listMin, listMax, listIgnore, min', max'
 ) where
@@ -26,7 +26,7 @@ min' =          "min"           :: T.Text -- Bad name, but Prelude already has a
 max' =          "max"           :: T.Text
 
 {--------------------------------------------------------------------
-  Extraction.  
+  Validation.  
 --------------------------------------------------------------------}
 
 type Validator = T.Text -> DocVal -> Document -> Either String DocVal
@@ -142,8 +142,8 @@ toListOpts d =
             else False
     in ListOpts lmin lmax lignore
 
-extractSafe :: Document -> Document -> Either String Document
-extractSafe doc rules =
+validateSafe :: Document -> Document -> Either String Document
+validateSafe doc rules =
     CM.liftM dm $ sequence $ map fromJust $ filter isJust $ map (\r@(key, rule) ->
         let subject = get key doc
             toPair :: a -> b -> (a, b)
@@ -193,6 +193,6 @@ fromRight x = case x of
     Right r -> r
 
 -- First is subject, second is rules.
--- The document we are extracting from is meant to be flat, with the possible exception of a first level array.
-extract :: Document -> Document -> Document
-extract doc rules = fromRight $ extractSafe doc rules
+-- The document we are validating is meant to be flat, with the possible exception of a first level array.
+validate :: Document -> Document -> Document
+validate doc rules = fromRight $ validateSafe doc rules

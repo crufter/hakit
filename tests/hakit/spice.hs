@@ -84,13 +84,15 @@ cases2 = [
             div' [cat "class" "c4"] [],
             div' [cat "class" "c5"] [],
             div' [cat "class" "c6"] [],
-            div' [cat "class" "c7"] [],
+            div' [cat "class" "c7"] [
+                tag "li" [cat "class" "l1"] []
+            ],
             div' [cat "class" "c8"] []
         ],
         [
             ("div", 8), ("div:eq(3)", 1), ("div:gt(0)", 7), ("div:gt(6)", 1), ("div:lt(0)", 0),
             ("div:lt(1)", 1), ("div:lt(7)", 7), ("div:first", 1), ("div:last", 1),
-            ("div:even", 4), ("div:odd", 4)
+            ("div:even", 4), ("div:odd", 4), ("div:even:empty", 3), ("div:odd:first.c2", 1)
         ]
     )
     ]

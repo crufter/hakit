@@ -321,38 +321,38 @@ select' sel t =
   Selectors.  
 --------------------------------------------------------------------}
 
--- Selectors planned
+-- Selectors planned.
 
--- Implemented      Example                     Description
--- Y                *                           - matches any element
--- Y                #X                          - id selector
--- Y                .X                          - class selector
--- Y                selector1 selector2         - descendant selector
--- Y                X                           - type selector
--- Y                selector1 > selector2       - direct child selector
--- Y                [attrName]                  - has attribute selector [name]
--- Y                [attrName="val"]            - attribute name-value selector
--- Y                [attrName*="val"]           - regexp attribute selectors
--- Y                [attrName^="val"]  
--- Y                [attrName$="val"]
--- Y                [attrName~="val"]
--- Y                [attrName!="val"]
--- Y                selector1, selector2        - multiple selectors
+-- Implemented      Example                     Name
+-- Y                *                           - All selector
+-- Y                #id                         - Id selector
+-- Y                .class                      - Class selector
+-- Y                selector1 selector2         - Descendant selector
+-- Y                type                        - Type selector
+-- Y                selector1 > selector2       - Direct child selector
+-- Y                [attrName]                  - Has attribute selector
+-- Y                [attrName="val"]            - Attribute equals selector
+-- Y                [attrName*="val"]           - Attribute contains selector
+-- Y                [attrName^="val"]           - Attribute starts with selector
+-- Y                [attrName$="val"]           - Attribute ends with selector
+-- Y                [attrName~="val"]           - Attribute contains word selector
+-- Y                [attrName!="val"]           - Attribute not equals selector
+-- Y                selector1, selector2        - Multiple selectors selector
 -- Y                :not(selector)              - :not() selector
 -- Y                :has(selector)              - :has() selector
--- Y                :eq(3)
--- Y                :lt(3)
--- Y                :gt(3)
--- Y                :even
--- Y                :odd
--- Y                :first
--- Y                :last
--- Y                :first-child
--- Y                :last-child
--- Y                :nth-child(3)   
--- Y                :nth-last-child(3)
--- Y                :empty
--- Y                :parent
+-- Y                :eq(3)                      - :eq() selector
+-- Y                :lt(3)                      - :lt() selector
+-- Y                :gt(3)                      - :gt() selector
+-- Y                :even                       - :even selector
+-- Y                :odd                        - :odd selector
+-- Y                :first                      - :first selector
+-- Y                :last                       - :last selector
+-- Y                :first-child                - :first-child selector
+-- Y                :last-child                 - :last-child selector
+-- Y                :nth-child(3)               - :nth-child() selector
+-- Y                :nth-last-child(3)          - :nth-last-child() selector
+-- Y                :empty                      - :empty selector
+-- Y                :parent                     - :parent selector
 
 data Regexy =
         StartsWith
