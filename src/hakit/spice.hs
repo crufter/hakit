@@ -9,7 +9,7 @@ module Hakit.Spice (
     -- * Types
     Attrs(), Tag(..), Child(..),
     -- * Exported for testing purposes only
-    matches, parseSelector
+    matches, parseSelector, example
 ) where
 
 import qualified Data.Text as T
@@ -62,7 +62,11 @@ example =
     html [] [
         head' [] [],
         body [cat "style" "background: #ccc;"] [
-            text "Hello world."
+            text "Hello world.",
+            div' [cat "class" "just-a-div"] [],
+            div' [] [
+                text "Hello again."
+            ]
         ]
     ]
 
@@ -85,13 +89,16 @@ sa a@(Attrs at) = if M.size at > 0
 
 -- Show children.
 sc :: [Child] -> String
-sc x = L.intercalate "\n" $ map show x
+sc x = L.intercalate "" $ map (\y -> tabLines $ show y) x
+    where tabLines x = unlines $ map (\y -> "    " ++ y) $ lines x
 
 instance Show Tag where
     show (Doctype a)    = "<!DOCTYPE " ++ T.unpack a ++ ">"
-    show (Tag n a b)    = case M.lookup n voidElements of
+    show (Tag n a c)    = case M.lookup n voidElements of
         Just ()     -> "<" ++ T.unpack n ++ sa a ++ "/>"
-        Nothing     -> "<" ++ T.unpack n ++ sa a ++ ">" ++ sc b ++ "</" ++ T.unpack n ++ ">"
+        Nothing     -> if length c > 0
+            then "<" ++ T.unpack n ++ sa a ++ ">\n" ++ sc c ++ "</" ++ T.unpack n ++ ">"
+            else "<" ++ T.unpack n ++ sa a ++ "></" ++ T.unpack n ++ ">"
     show (Text a)       = T.unpack a
 
 {--------------------------------------------------------------------
