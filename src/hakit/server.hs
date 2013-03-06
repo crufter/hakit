@@ -97,10 +97,15 @@ headersToDoc :: [HTypesHeader.Header] -> Document
 headersToDoc h = queryToDoc $ trans h where
     trans x = map (\(key, val) -> (CI.original key, Just val)) x
 
--- docToHeaders :: Document -> [HTypesHeader.Header]
--- docToHeaders d = List.concat $ map f d where
---     f x = case x of
---         DocString s     -> 
+docToHeaders :: Document -> [HTypesHeader.Header]
+docToHeaders d = map f $ M.toList d
+    where f (k, v) = (CI.mk $ TE.encodeUtf8 k, case v of
+            DocString s     -> TE.encodeUtf8 s
+            DocInt i        -> TE.encodeUtf8 $ T.pack $ show i
+            DocFloat f      -> TE.encodeUtf8 $ T.pack $ show f
+            DocBool b       -> TE.encodeUtf8 $ T.pack $ show b
+            otherwise       -> error $ "can't convert to header: " ++ show v
+            )
 
 -- [HTypes.QueryItem] -> Document
 queryToDoc :: [(BS.ByteString, Maybe BS.ByteString)] -> Document
@@ -153,8 +158,8 @@ hakitToWai fresp = do
             Unavailable           -> HTypes.status503
         mimeType = "text/html" -- Ma.findWithDefault "text/html" (ctype $ body fr) EM.extToMimeType
         contentType = ("Content-Type", mimeType)
-        cookies = []
-    return $ Wai.responseLBS statusCode [] (content $ body fr)
+        cookies = docToHeaders $ store fr
+    return $ Wai.responseLBS statusCode (contentType:cookies) (content $ body fr)
 
 -- | Start the server. Example:
 -- > startServer defaultConfig (\req -> return $ Resp OK (Body "text/html" "Hello.") emptyDoc [])

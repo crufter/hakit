@@ -142,8 +142,9 @@ toListOpts d =
             else False
     in ListOpts lmin lmax lignore
 
+-- | Safe version of validate.
 validateSafe :: Document -> Document -> Either String Document
-validateSafe doc rules =
+validateSafe rules doc =
     CM.liftM dm $ sequence $ map fromJust $ filter isJust $ map (\r@(key, rule) ->
         let subject = get key doc
             toPair :: a -> b -> (a, b)
@@ -192,7 +193,8 @@ fromRight x = case x of
     Left l  -> error l
     Right r -> r
 
--- First is subject, second is rules.
+-- | Validate a given document.
+-- First is rules, second is subject.
 -- The document we are validating is meant to be flat, with the possible exception of a first level array.
 validate :: Document -> Document -> Document
-validate doc rules = fromRight $ validateSafe doc rules
+validate rules doc = fromRight $ validateSafe rules doc

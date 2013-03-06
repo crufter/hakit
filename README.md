@@ -14,7 +14,7 @@ a central dynamic data structure and using that in most places (where it is sens
 so they will spend less time freaking out about yet another type they don't grasp yet.
 
 #### Also...
-PHP & co has approx 6000 web frameworks/toolkits, Haskell has only a handful, let's get up
+PHP & co has approx 6000 web frameworks/toolkits (per language), Haskell has only a handful, let's get up
 to speed, shall we?
 
 ### Modules
@@ -25,12 +25,12 @@ A module containing an easy to use data type similar to that of dynamic language
 #### Hakit.Server
 A very simple to use HTTP server.
 
-#### Hakit.Validation
+#### [Hakit.Validation](docs/validation)
 Validate data easily.
 
 #### Hakit.Spice
 A CSS selector based template engine (effectively, jQuery in Haskell, on your server).  
-All selectors support infinitely nested, complex structure.  
+All selectors can be arbitrarily nested (eg: ".a:not(.b:has(.c, .d:first)):even" and similar).  
 The workings of the selectors aim to match the jQuery behaviour, so for further documentation, consult the jQuery API.
 
 Selectors planned:
@@ -66,13 +66,13 @@ Selectors planned:
     Y                :empty                      - :empty selector
     Y                :parent                     - :parent selector
 
-See the tests of Spice for usage example.
+See the tests of Spice for usage examples.
 
 #### Hakit.Db
 Typeclasses (currently only one, a simplistic one) which reprents db drivers.
 
 #### Hakit.Db.Mongo
-Mongo implementation of a db driver found in Hakit.Db
+MongoDB implementation of a db driver found in Hakit.Db
 
 #### Hakit.Routing
 Routing made easy.

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Tests.Hakit where
 
 import Test.HUnit
@@ -10,7 +11,7 @@ e3 (_,_,x) = x
 want what verdict = assertBool (show what) verdict
 
 cases1 = [
-    (["author" .- ["name" .- "Joe", "age" .- (30::Integer)]],                       "author.name", d "Joe"),
+    (["author" .- ["name" .- "Joe", "age" .- (30]],                                 "author.name", d "Joe"),
     (["x" .- ["y" .- ["z" .- "val"]]],                                              "x.y.z", d "val"),
     (["x" .- [d "a", d "b", d "c"]],                                                "x[0]", d "a"),
     (["x" .- ["y" .- [d "a", d ["field1" .- "val1", "field2" .- "val2"], d "c"]]],  "x.y[1].field2", d "val2")

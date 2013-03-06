@@ -2,7 +2,8 @@
 module Tests.Hakit.Db.Mongo where
 
 import Test.HUnit
-import Hakit.Db.Mongo
+import qualified Hakit.Db.Mongo as M
+import Hakit.Db
 import Hakit
 import qualified Data.Text as T
 import qualified Safe

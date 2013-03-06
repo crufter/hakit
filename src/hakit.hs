@@ -9,7 +9,7 @@ on them.
 
 module Hakit (
     -- * Document related types.
-    Document, DList, DTyped(..), DocVal(..), Collection,
+    Document, DList, DTyped(..), DocVal(..),
     DocValComp(..), DocComp(..),
     
     -- * Convenience functions.
@@ -173,9 +173,6 @@ d a = toDocVal a
 dt :: DocValComp a => T.Text -> a -> DocVal
 dt typ val = DocTyped $ DTyped typ $ toDocVal val
 
--- | Just a short synonym for M.fromList.
-dm a = M.fromList a
-
 infix 0 .-
 -- | Helps to easily create a document (compatible type), like ["name" .- "Joey"]
 (.-) :: DocValComp b => T.Text -> b -> (T.Text, DocVal)
@@ -275,6 +272,25 @@ ma f d = maRec f d where
         DocTyped t  -> f $ DocTyped $   DTyped (typ t) $ maRec f (val t)
         otherwise   -> f d
 
+-- | An empty document.
+nilDoc :: M.Map T.Text DocVal
+nilDoc = M.empty
+
+size a = M.size a
+
+-- | A typeclass for types convertible to a Document.
+class DocComp a where
+    toDoc :: a -> Document
+
+instance DocComp [(T.Text, DocVal)] where
+    toDoc = M.fromList
+
+instance DocComp Document where
+    toDoc = id
+
+dm :: DocComp d => d -> Document
+dm x = toDoc x
+
 {--------------------------------------------------------------------
   Oid/dbRef helpers.  
 --------------------------------------------------------------------}
@@ -310,7 +326,7 @@ idOf' x = case x of
     DocTyped d  -> idOf d
     otherwise   -> error dbRefMustBe
 
-collOf :: DTyped -> Collection
+collOf :: DTyped -> T.Text
 collOf x = getString "coll" $ unpackDbRef x
 
 collOf' :: DocVal -> T.Text
@@ -332,24 +348,6 @@ strToDbRef str = DocTyped $ DTyped "dbRef" $ DocMap $ M.fromList $
 {--------------------------------------------------------------------
   Other.  
 --------------------------------------------------------------------}
-
-type Collection = T.Text
-
--- | An empty document.
-nilDoc :: M.Map T.Text DocVal
-nilDoc = M.empty
-
-size a = M.size a
-
--- | A typeclass for types convertible to a Document.
-class DocComp a where
-    toDoc :: a -> Document
-
-instance DocComp [(T.Text, DocVal)] where
-    toDoc = M.fromList
-
-instance DocComp Document where
-    toDoc = id
 
 e1 (a,_,_) = a
 e2 (_,a,_) = a
