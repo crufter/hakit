@@ -1,11 +1,28 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Hakit.Spice (
     -- * Tag creation
-    tag, doctype, html, head', body, div', text, cat,
+    tag,
+    doctype,
+    html,
+    head',
+    body,
+    div',
+    text,
+    cat,
     -- * Nested tag functions
-    alter, remove, select,
+    alter,
+    remove,
+    select,
     -- * Single tag functions
-    attrs, attr, children, name, addClass, removeClass, hasClass, toggleClass,
+    attrs,
+    attr,
+    children,
+    name,
+    -- * Manipulation
+    addClass,
+    removeClass,
+    hasClass,
+    toggleClass,
     -- * Types
     Attrs(), Tag(..), Child(..),
     -- * Exported for testing purposes only
@@ -130,6 +147,10 @@ name :: Tag ->      T.Text
 name (Doctype t)    = "doctype"
 name (Text t)       = "text"
 name (Tag n _ _)    = n
+
+{--------------------------------------------------------------------
+  Manipulation.  
+--------------------------------------------------------------------}
 
 addClass :: T.Text -> Tag -> Tag
 addClass clas tag = case attr "class" tag of

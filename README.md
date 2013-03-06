@@ -28,43 +28,43 @@ A very simple to use HTTP server.
 #### [Hakit.Validation](docs/validation)
 Validate data easily.
 
-#### Hakit.Spice
+#### [Hakit.Spice](docs/spice)
 A CSS selector based template engine (effectively, jQuery in Haskell, on your server).  
 All selectors can be arbitrarily nested (eg: ".a:not(.b:has(.c, .d:first)):even" and similar).  
 The workings of the selectors aim to match the jQuery behaviour, so for further documentation, consult the jQuery API.
 
 Selectors planned:
 
-    Implemented      Example                     Name
-    Y                *                           - All selector
-    Y                #id                         - Id selector
-    Y                .class                      - Class selector
-    Y                selector1 selector2         - Descendant selector
-    Y                type                        - Type selector
-    Y                selector1 > selector2       - Direct child selector
-    Y                [attrName]                  - Has attribute selector
-    Y                [attrName="val"]            - Attribute equals selector
-    Y                [attrName*="val"]           - Attribute contains selector
-    Y                [attrName^="val"]           - Attribute starts with selector
-    Y                [attrName$="val"]           - Attribute ends with selector
-    Y                [attrName~="val"]           - Attribute contains word selector
-    Y                [attrName!="val"]           - Attribute not equals selector
-    Y                selector1, selector2        - Multiple selectors selector
-    Y                :not(selector)              - :not() selector
-    Y                :has(selector)              - :has() selector
-    Y                :eq(3)                      - :eq() selector
-    Y                :lt(3)                      - :lt() selector
-    Y                :gt(3)                      - :gt() selector
-    Y                :even                       - :even selector
-    Y                :odd                        - :odd selector
-    Y                :first                      - :first selector
-    Y                :last                       - :last selector
-    Y                :first-child                - :first-child selector
-    Y                :last-child                 - :last-child selector
-    Y                :nth-child(3)               - :nth-child() selector
-    Y                :nth-last-child(3)          - :nth-last-child() selector
-    Y                :empty                      - :empty selector
-    Y                :parent                     - :parent selector
+    Implemented     Example                     Name
+    Y               *                           - All selector
+    Y               #id                         - Id selector
+    Y               .class                      - Class selector
+    Y               selector1 selector2         - Descendant selector
+    Y               type                        - Type selector
+    Y               selector1 > selector2       - Direct child selector
+    Y               [attrName]                  - Has attribute selector
+    Y               [attrName="val"]            - Attribute equals selector
+    Y               [attrName*="val"]           - Attribute contains selector
+    Y               [attrName^="val"]           - Attribute starts with selector
+    Y               [attrName$="val"]           - Attribute ends with selector
+    Y               [attrName~="val"]           - Attribute contains word selector
+    Y               [attrName!="val"]           - Attribute not equals selector
+    Y               selector1, selector2        - Multiple selectors selector
+    Y               :not(selector)              - :not() selector
+    Y               :has(selector)              - :has() selector
+    Y               :eq(3)                      - :eq() selector
+    Y               :lt(3)                      - :lt() selector
+    Y               :gt(3)                      - :gt() selector
+    Y               :even                       - :even selector
+    Y               :odd                        - :odd selector
+    Y               :first                      - :first selector
+    Y               :last                       - :last selector
+    Y               :first-child                - :first-child selector
+    Y               :last-child                 - :last-child selector
+    Y               :nth-child(3)               - :nth-child() selector
+    Y               :nth-last-child(3)          - :nth-last-child() selector
+    Y               :empty                      - :empty selector
+    Y               :parent                     - :parent selector
 
 See the tests of Spice for usage examples.
 
