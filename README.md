@@ -19,7 +19,7 @@ to speed, shall we?
 
 ### Modules
 
-#### Hakit
+#### [Hakit](docs/hakit)
 A module containing an easy to use data type similar to that of dynamic languages.
 
 #### Hakit.Server
@@ -77,7 +77,7 @@ MongoDB implementation of a db driver found in Hakit.Db
 #### Hakit.Routing
 Routing made easy.
 
-#### Hakit.Jobs
+#### [Hakit.Jobs](docs/jobs)
 Lets you start cronlike jobs from your Haskell application.
 
 ### Goals

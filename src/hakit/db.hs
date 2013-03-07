@@ -5,7 +5,19 @@ module Hakit.Db (
     Specials(..),
     specials,
     docToSpecials,
-    toDocStyleSort
+    toDocStyleSort,
+    -- * Oid/dbRef
+    dbRef,
+    oid,
+    idOf,
+    idOf',
+    collOf,
+    collOf',
+    dbRefToStr,
+    strToDbRef,
+    strToId,
+    isDbRef,
+    isId,
 ) where
 
 import Hakit
@@ -14,6 +26,7 @@ import qualified Data.Function as F
 import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.Ord as O
+import qualified Safe
 
 {--------------------------------------------------------------------
   These functions are useful when you implement the Db class.  
@@ -157,3 +170,57 @@ grBy f l = List.groupBy ((==) `F.on` f) $ List.sortBy (O.comparing f) l
 -- | Same as gr but with a 3-tuple.
 gr' :: Ord a => [(a, t, b)] -> [(a, t, [b])]
 gr' l = map (\l -> (e1 . head $ l, e2 . head $ l, map e3 l)) $ grBy e1 l
+
+{--------------------------------------------------------------------
+  Oid/dbRef helpers.  
+--------------------------------------------------------------------}
+
+oid :: T.Text -> DocVal
+oid x = DocTyped $ DTyped "id" (DocString x)
+
+refSep      = " "
+idKey       = "id"
+refType     = "dbRef"
+idType      = "id"
+regexpType  = "regexp"
+idLen       = 24
+
+dbRef :: DocComp dc => dc -> DocVal
+dbRef doc = DocTyped $ DTyped "dbRef" (d (toDoc doc))
+
+unpackDbRef :: DTyped -> Document
+unpackDbRef x = case x of
+    DTyped{typ="dbRef", val=DocMap m}   -> m
+    otherwise                           -> error "Can't convert DTyped to a dbRef."
+
+idOf :: DTyped -> T.Text
+idOf x = getString "id" $ unpackDbRef x
+
+strToId :: T.Text -> DocVal
+strToId str = d $ DTyped "id" (d str)
+
+dbRefMustBe = "A dbRef must be of type DTyped"
+
+idOf' :: DocVal -> T.Text
+idOf' x = case x of
+    DocTyped d  -> idOf d
+    otherwise   -> error dbRefMustBe
+
+collOf :: DTyped -> T.Text
+collOf x = getString "coll" $ unpackDbRef x
+
+collOf' :: DocVal -> T.Text
+collOf' x = case x of
+    DocTyped d  -> collOf d
+    otherwise   -> error dbRefMustBe
+
+isXTyped t x = case x of
+    DocTyped d -> typ d == t;
+    otherwise -> False
+isDbRef x = isXTyped "dbRef" x
+isId x = isXTyped "id" x    
+
+dbRefToStr doc = T.intercalate ";" $ map (\(a, b) -> T.concat [toString b, "|", a]) $ List.sortBy (O.comparing fst) (M.toList doc)
+
+strToDbRef str = DocTyped $ DTyped "dbRef" $ DocMap $ M.fromList $
+    map (\x -> let xs = T.splitOn "|" x in (Safe.atNote "strToDbRef 1" xs 1, d $ Safe.atNote "strToDbRef 0" xs 0)) (T.splitOn ";" str)

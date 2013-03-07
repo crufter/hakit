@@ -45,7 +45,7 @@ fromDocVal :: Hakit.DocVal -> Mdb.Value
 fromDocVal v = case v of
     Hakit.DocTyped      t   -> case t of
         Hakit.DTyped{Hakit.typ="id", Hakit.val=Hakit.DocString s}       -> Mdb.ObjId $ strToOid s
-        Hakit.DTyped{Hakit.typ="dbRef", Hakit.val=Hakit.DocMap m}       -> Mdb.String  $ T.append marker (Hakit.dbRefToStr m)
+        Hakit.DTyped{Hakit.typ="dbRef", Hakit.val=Hakit.DocMap m}       -> Mdb.String  $ T.append marker (HD.dbRefToStr m)
     Hakit.DocInt        i   ->  Mdb.Int64 (fromInteger i)
     Hakit.DocFloat      f   ->  Mdb.Float f
     Hakit.DocString     s   ->  if T.isPrefixOf marker s then error "dbRef marker found in DocString" else Mdb.String s
@@ -71,7 +71,7 @@ fromDoc a = map fromDocField (M.toList a)
 uToB :: Mdb.UUID -> S.ByteString
 uToB x = case x of Mdb.UUID bs -> bs
 
-strToDbRef str = Hakit.strToDbRef . snd $ T.splitAt 2 str
+strToDbRef str = HD.strToDbRef . snd $ T.splitAt 2 str
 
 toDocVal :: Mdb.Value -> Hakit.DocVal
 toDocVal v = case v of

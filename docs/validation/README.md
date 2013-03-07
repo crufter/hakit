@@ -31,12 +31,13 @@ Currently, both the rules and subject must be of type Hakit.Document.
 
 ### Validating single fields.
 
-In GHCi, first import the two needed modules, and set the OverloadedStrings pragma:
+In GHCi, first import the two needed modules, and set the OverloadedStrings and ExtendedDefaultRules pragmas:
 
 ```haskell
 import Hakit
 import Hakit.Validation
 :set -XOverloadedStrings
+:set -XExtendedDefaultRules
 ```
 
 You can create documents with the function 'dm' (read: document), which converts Hakit.Document

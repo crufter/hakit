@@ -53,7 +53,7 @@ Currently, we write the HTML data structures themselves in Haskell.
 Later we will add support to parse from HTML too.  
 It is very simple to do indeed: an HTML tag is nothing else but a tagname, some key value pairs and children:
 
-```
+```haskell
 --  Tagname     Attribute 1         Attribute 2         Children
     body        [cat "id" "x",      cat "class" "y"]    [
         div' [] [], -- Child 1 with no attributes, no children
@@ -66,7 +66,7 @@ div became div', and head is called head' to avoid clash with prelude.
 
 If you want, you can use the general tag form too:
 
-```
+```haskell
     tag "body" [cat "id" "x", cat "class" "y"] [
         tag "div" [] [],
         tag "div" [] []
@@ -77,9 +77,9 @@ Now let's look at some complete examples.
 
 ```haskell
 {-# LANGUAGE OverloadedStrings #-}
-import qualified Hakit.Spice
+import Hakit.Spice
 
-example :: Spice.Tag
+example :: Tag
 example = html [
         head' [] [],
         body [] [
