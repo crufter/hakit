@@ -3,6 +3,8 @@
 Hakit
 =====
 
+### Basics
+
 The Hakit core (to see other submodules, click back on top) contains a Document type and utility functions on it.  
 This type is modelled after the workings of dynamically typed languages, because a., it is easy to understand b., works well in
 the highly dynamic world of web developement. However, since we are in Haskell, we do not throw all type safety out of the windows, like in
@@ -74,5 +76,52 @@ d :: DocValComp a => a -> DocVal
 ```
 
 The typeclass DocValComp denotes types compatible with the DocVal type. There is a lot of them so if you are curious issue a ':i DocValComp' or browse the source.  
+
+### Utility functions
+
+As we've already seen, the Document type is recursive, a Document can contain another Document, or a list, which can also contain documents and lists.  
+Accessing an element deep down inside these nested structures can be problematic (even in a dynamic language like JavaScript). To help this, we can use the
+'get' function.
+
+```haskell
+> :t get
+get :: Text -> Document -> DocVal
+```
+
+We can use dot notation to access elements.
+
+```haskell
+> get "lived.london" exampleDoc
+DocString "2 years"
+> get "kids.0" exampleDoc
+DocString "Katie"
+> get "randomThings.1" exampleDoc
+DocBool True
+> get "notExistingField" exampleDoc
+Nil
+```
+
+Now you can rightly say that you need a Bool, and not a DocBool. This is not possible to please get back to Clojure. Just kidding =)  
+There is a list of get functions which does exactly this:
+
+    getString
+    getInt
+    getFloat
+    getBool
+    getMap
+    getList
+    getNil
+
+Please note that if the value does not exist, or does not match the wanted one, an exception will be thrown.
+
+You can also use similar functions on DocVals:
+
+    toString        isString
+    toInt           isInt
+    toFloat         isFloat
+    toBool          isBool
+    toMap           isMap
+    toList          isList
+                    isNil
 
 More coming soon.

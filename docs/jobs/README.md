@@ -24,8 +24,8 @@ Now this, by default is not running. Let's add two jobs to it.
 
 ```haskell
 --              job name    interval    IO computation
-register jobs   "1beep"     "7s"        $ putStr "\a"
-register jobs   "2beep"     "11s"       $ putStr "\a\a"
+> register jobs "1beep"     "7s"        $ putStr "\a"
+> register jobs "2beep"     "11s"       $ putStr "\a\a"
 ```
 
 If you try putStr "\a" by itself you can note that instead of printing out some weird character,  
@@ -36,8 +36,8 @@ We must start the execution of the jobs with the next command, but before that, 
 of the scheduler, because by default it is aimed at slower tasks.
 
 ```haskell
-setInterval jobs 1
-startExec jobs
+> setInterval   jobs 1
+> startExec     jobs
 ```
 
 We now heard 3 beeps, because at start the scheduler runs all tasks. From that point, the scheduler will run the task according 
@@ -53,7 +53,7 @@ to the timing we specified:
 We can stop the execution of task by issuing
 
 ```haskell
-stopExec jobs
+> stopExec jobs
 ```
 
 More coming soon.

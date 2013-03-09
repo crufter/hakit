@@ -40,7 +40,13 @@ cases1 = [
     (div' [cat "id" "tid", cat "class" "tc"] [],   ".tc#tid1",      False)
     ]
 
-t c = TestCase $ mapM_ (\c -> want (e1 c, e2 c) (matches (e2 c) (e1 c) == e3 c)) c
+t cs = TestCase $ mapM_ f cs
+    where
+    f c =
+        let shouldFind = e3 c
+            source = e1 c
+            selector = e2 c
+        in want (source, selector) $ matches selector source == shouldFind
 
 testMatches = t cases1
 
@@ -71,8 +77,15 @@ cases2 = [
             ]
         ],
         [
-            ("#t1 #t4", 1), ("div:first-child", 5), ("div:last-child", 1), ("div:nth-child(2)", 1),
-            (".c1:has(.c4)", 1), (":empty", 2), (":parent", 5), ("div:not(:parent)", 2), ("div:not(:empty)", 5),
+            ("#t1 #t4", 1),
+            ("div:first-child", 5),
+            ("div:last-child", 1),
+            ("div:nth-child(2)", 1),
+            (".c1:has(.c4)", 1),
+            (":empty", 2),
+            (":parent", 5),
+            ("div:not(:parent)", 2),
+            ("div:not(:empty)", 5),
             (".c1, .c2, .c21", 3)
         ]
     ),
@@ -90,14 +103,32 @@ cases2 = [
             div' [cat "class" "c8"] []
         ],
         [
-            ("div", 8), ("div:eq(3)", 1), ("div:gt(0)", 7), ("div:gt(6)", 1), ("div:lt(0)", 0),
-            ("div:lt(1)", 1), ("div:lt(7)", 7), ("div:first", 1), ("div:last", 1),
-            ("div:even", 4), ("div:odd", 4), ("div:even:empty", 3), ("div:odd:first.c2", 1)
+            ("div", 8),
+            ("div:eq(3)", 1),
+            ("div:gt(0)", 7),
+            ("div:gt(6)", 1),
+            ("div:lt(0)", 0),
+            ("div:lt(1)", 1),
+            ("div:lt(7)", 7),
+            ("div:first", 1),
+            ("div:last", 1),
+            ("div:even", 4),
+            ("div:odd", 4),
+            ("div:even:empty", 3),
+            ("div:odd:first.c2", 1)
         ]
     )
     ]
 
-testSelect = TestCase $ mapM_ (\(tag, checks) -> mapM_ (\c -> want (c, length $ select (fst c) tag, tag) ((length $ select (fst c) tag) == snd c)) checks) cases2
+testSelect = TestCase $ mapM_ f cases2
+    where
+    f (tag, checks) = mapM_ f1 checks
+        where
+        f1 c =
+            let selector        = fst c
+                wantedMatches   = snd c
+                actualMatches   = length $ select selector tag
+            in want (c, actualMatches, tag) $ wantedMatches == actualMatches
 
 tests = TestList [
     TestLabel "testMatches" testMatches,

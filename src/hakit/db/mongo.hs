@@ -166,7 +166,7 @@ instance HD.Db Db where
                     else error $ show $ T.concat ["Could not authenticate user ", user, " against ", server]
             else return ()
         let m = if Hakit.exists "serverName" m1
-                then Hakit.unset "serverName" (Hakit.set "server" m1 (Hakit.get "serverName" m1))
+                then Hakit.unset "serverName" (Hakit.set "server" (Hakit.get "serverName" m1) m1)
                 else m1
             locFrom old new = if M.size old >= 3
                 then old

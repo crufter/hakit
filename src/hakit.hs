@@ -79,21 +79,24 @@ import qualified Data.Map as M
 
 type Document = M.Map T.Text DocVal
 type DList = [DocVal]
+
 -- Allows us to store some metainformation along with the DocVal.
 data DTyped = DTyped {
-    typ::T.Text,
-    val::DocVal
-} deriving (Ord, Eq, Show)
-data DocVal =   DocInt          Integer
-                | DocFloat      Double
-                | DocString     T.Text
-             -- | DocBS         ByteString
-                | DocBool       Bool
-                | DocMap        Document
-                | DocList       DList
-                | DocTyped      DTyped     
-                | Nil
-                deriving (Ord, Eq, Show)
+    typ :: T.Text,
+    val :: DocVal
+} deriving (Eq, Ord, Show)
+
+data DocVal 
+    =   DocInt          Integer
+    |   DocFloat        Double
+    |   DocString       T.Text
+ -- |   DocBS           ByteString
+    |   DocBool         Bool
+    |   DocMap          Document
+    |   DocList         DList
+    |   DocTyped        DTyped     
+    |   Nil
+    deriving (Ord, Eq, Show)
 
 isInt a =       case a of DocInt b -> True; otherwise -> False
 toInt a =       case a of DocInt b -> b; otherwise -> error $ show a ++ " is not an Integer."
@@ -178,7 +181,9 @@ isRight a = not $ isLeft a
 --------------------------------------------------------------------}
 
 -- One level of access path.
-data AccElem = AccStr T.Text | AccInt Integer deriving (Show)
+data AccElem 
+    =   AccStr T.Text
+    |   AccInt Integer deriving (Show)
 
 get' :: AccElem -> DocVal -> (DocVal, Bool)
 get' a b = let notFound = (Nil, False) in case a of
@@ -201,18 +206,19 @@ parseAccElems a = map parseOne parts where
             Nothing     -> AccStr $ T.pack a
 
 getRec :: T.Text -> Document -> (DocVal, Bool)
-getRec accPathStr doc = getRecurs accElems (DocMap doc) where
-    accElems = parseAccElems accPathStr
+getRec path doc = getRecurs accElems (DocMap doc) where
+    accElems = parseAccElems path
     getRecurs :: [AccElem] -> DocVal -> (DocVal, Bool)
     getRecurs elems docval
         | length elems == 1     = get' (Safe.atNote "getRec 1" elems 0) docval
         | length elems > 1      = getRecurs (tail elems) $ fst $ get' (Safe.atNote "getRec 2" elems 0) docval
 
--- | Returns nil if the value under the access path is Nil or that access path is nonexistent.
--- To differentiate between Nils and nonexistent access pathes see hasKey.
--- Example usage: get "author.books[1].title"
+-- | Get element with dot notation, eg:
+-- > get "author.books[1].title" example
+-- Returns nil if the value specified by the path is Nil or that path is nonexistent.
+-- To differentiate between Nils and nonexistent access pathes see the exists method.
 get :: T.Text -> Document -> DocVal
-get accPathStr doc = fst $ getRec accPathStr doc
+get path doc = fst $ getRec path doc
 
 -- Helper functions for fast retrieval when you are sure the element is present.
 getString   a b = case get a b of DocString s   -> s;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a String (Text)."
@@ -224,14 +230,93 @@ getMap      a b = case get a b of DocMap m      -> m;   otherwise -> error $ (T.
 getNil      a b = case get a b of Nil           -> Nil; otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Nil."
 getTyped    a b = case get a b of DocTyped t    -> t;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not Typed."
 
+-- | Returns true if the element specified by the path exists.
+-- Supports the same dot notation as get.
 exists :: T.Text -> Document -> Bool
-exists accPathStr doc = snd $ getRec accPathStr doc
+exists path doc = snd $ getRec path doc
 
-set :: DocValComp d => T.Text -> Document -> d -> Document
-set key doc val = M.alter (\_ -> Just $ toDocVal val) key doc
+-- | Sets an element specified by path.
+-- Supports the same dot notation as get.
+-- If the path is nonexistent, it will create the maps along the way, but will not grow any lists.
+-- If the path already exists, it will replace the element.
+set :: DocValComp d => T.Text -> d -> Document -> Document
+set key val doc = fst $ set' key val doc
 
+isAccInt x = case x of
+    AccInt _    -> True
+    otherwise   -> False
+
+-- Returns the possibly updated Document and a Bool indicating wether
+-- the document has been changed.
+set' :: DocValComp d => T.Text -> d -> Document -> (Document, Bool)
+set' key val doc = (toMap a, b)
+    where
+    accElems = parseAccElems key
+    (a, b) = setRecurs accElems (d val) $ d doc
+    replace :: Int -> a -> [a] -> [a]
+    replace w value lst = if length lst <= w || length lst == 0
+        then error "bug at replace call site"
+        else if w == length lst - 1
+            then init lst ++ [value]
+            else let (x, _:ys) = List.splitAt w lst in x ++ value : ys
+    lists :: [Int]
+    lists = List.findIndices isAccInt accElems
+    allLen = length accElems
+    modMap :: (DocVal, Bool) -> T.Text -> Document -> (DocVal, Bool)
+    modMap (a, modded) s d1 = if modded
+        then (DocMap $ M.alter (\_ -> Just $ a) s d1, True)
+        else (DocMap d1, False)
+    setRecurs :: [AccElem] -> DocVal -> DocVal -> (DocVal, Bool)
+    setRecurs elems newVal v
+        | length elems == 1     = case v of
+            DocMap m    -> case elems!!0 of
+                AccStr s    -> (DocMap $ M.alter (\_ -> Just $ newVal) s m, True)
+                otherwise   -> error "last path specifies list in set"
+            otherwise   -> (v, False)
+        | length elems > 1      = let e = elems!!0 in case e of
+            AccStr s    -> case v of
+                DocList l   -> (v, False)
+                DocMap m    -> case M.lookup s m of
+                    Just x  -> modMap (setRecurs (tail elems) newVal $ d x) s m
+                    Nothing -> if any (> (allLen - length elems - 1)) lists
+                        then (v, False)
+                        else modMap (setRecurs (tail elems) newVal $ d (M.empty::M.Map T.Text DocVal)) s m
+                otherwise   -> (v, False)
+            AccInt i    -> case v of
+                DocMap m    -> (v, False)
+                DocList l   -> let ix = (fromInteger i)::Int in
+                    if length l <= ix || length l == 0
+                        then (v, False)
+                        else let (mv, modded) = setRecurs (tail elems) newVal $ l!!ix in
+                            if modded
+                                then (DocList $ replace ix mv l, True)
+                                else (v, False)
+
+-- | Unsets an element in a map specified by path.
+-- Supports the same dot notation as get.
 unset :: T.Text -> Document -> Document
-unset key doc = M.delete key doc
+unset key doc = fst $ unset' key doc
+
+unset' :: T.Text -> Document -> (Document, Bool)
+unset' key doc = let ae1 = parseAccElems key in f ae1
+    where
+    f ae
+        | length ae == 0      = (doc, False)
+        -- Can't unset a list.
+        | isAccInt $ last ae  = (doc, False)
+        | length ae == 1      = case M.lookup key doc of
+            Just x  -> (M.alter (\_ -> Nothing) key doc, True)
+            Nothing -> (doc, False)
+        | otherwise           =
+            let p = T.intercalate "" $ map (T.pack . show) $ tail ae
+                (v, ex) = getRec p doc
+            in if not ex
+                then (doc, False)
+                else case v of
+                    DocMap m    -> let p1 = T.pack . show $ last ae in case M.lookup p1 m of
+                        Just x  -> (M.alter (\_ -> Nothing) p m, True)
+                        Nothing -> (doc, False)
+                    otherwise   -> (doc, False)
 
 -- | filter recursively. Both the compound data structures (map, list, doctyped) and all of its elements will be feeded to the predicate.
 -- Note: in maps, only the value part of the key-value pairs are feeded to the predicate.

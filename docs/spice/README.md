@@ -139,9 +139,9 @@ addClass :: T.Text -> Tag -> Tag
 <html>
     <head></head>
     <body>
-        <div id="main" class="c1">
-            <div id="sub1"></div>
-            <div id="sub2"></div>
+        <div id="main" class="c1 hello-class">
+            <div id="sub1 hello-class"></div>
+            <div id="sub2 hello-class"></div>
         </div>
     </body>
 </html>

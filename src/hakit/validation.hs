@@ -183,7 +183,7 @@ validateSafe rules doc =
     transformR :: (T.Text, DocVal) -> (T.Text, Document)
     transformR a = case  a of
         (key, DocMap m)     -> if get "type" m == Nil
-                                    then (key, set "type" m "string")
+                                    then (key, set "type" "string" m)
                                     else (key, m)
         (key, DocBool b)    -> (key, dm ["type" .- "string"])
         otherwise           -> error $ "Can't interpret rule: " ++ show a

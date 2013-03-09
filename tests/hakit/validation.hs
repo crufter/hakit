@@ -35,7 +35,12 @@ cases1 = [
     ) -- List ignore, with it, the list member type mismatch disappears.
     ]
 
-t c = TestCase $ mapM_ (\c -> want (validateSafe (dm $ e2 c) (dm $ e1 c)) (e3 c (validateSafe (dm $ e2 c) (dm $ e1 c)) == True)) c
+t cs = TestCase $ mapM_ f cs
+    where
+    f c =
+        let checkFunc   = e3 c
+            res         = validateSafe (dm $ e2 c) (dm $ e1 c)
+        in want res $ checkFunc res == True
 testGet = t cases1
 
 tests = TestList [
