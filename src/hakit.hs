@@ -205,6 +205,12 @@ parseAccElems a = map parseOne parts where
             Just x      -> AccInt (toInteger x)
             Nothing     -> AccStr $ T.pack a
 
+unparseAccElems :: [AccElem] -> T.Text
+unparseAccElems xs = T.intercalate "." $ map f xs where
+    f x = case x of
+        AccStr s    -> s
+        AccInt i     -> T.pack $ show i
+
 getRec :: T.Text -> Document -> (DocVal, Bool)
 getRec path doc = getRecurs accElems (DocMap doc) where
     accElems = parseAccElems path
@@ -271,7 +277,13 @@ set' key val doc = (toMap a, b)
         | length elems == 1     = case v of
             DocMap m    -> case elems!!0 of
                 AccStr s    -> (DocMap $ M.alter (\_ -> Just $ newVal) s m, True)
-                otherwise   -> error "last path specifies list in set"
+                otherwise   -> error "got map, wanted list"
+            DocList l   -> case elems!!0 of
+                AccInt i    -> let ix = (fromInteger i)::Int in
+                    if length l <= ix || length l == 0
+                        then (v, False)
+                        else (DocList $ replace ix newVal l, True)
+                otherwise   -> error "got list, wanted map"
             otherwise   -> (v, False)
         | length elems > 1      = let e = elems!!0 in case e of
             AccStr s    -> case v of
@@ -308,13 +320,13 @@ unset' key doc = let ae1 = parseAccElems key in f ae1
             Just x  -> (M.alter (\_ -> Nothing) key doc, True)
             Nothing -> (doc, False)
         | otherwise           =
-            let p = T.intercalate "" $ map (T.pack . show) $ tail ae
+            let p = unparseAccElems $ init ae
                 (v, ex) = getRec p doc
             in if not ex
                 then (doc, False)
                 else case v of
-                    DocMap m    -> let p1 = T.pack . show $ last ae in case M.lookup p1 m of
-                        Just x  -> (M.alter (\_ -> Nothing) p m, True)
+                    DocMap m    -> let p1 = unparseAccElems [last ae] in case M.lookup p1 m of
+                        Just x  -> (set p (M.alter (\_ -> Nothing) p1 m) doc, True)
                         Nothing -> (doc, False)
                     otherwise   -> (doc, False)
 
