@@ -5,9 +5,14 @@ Hakit.Validation
 
 ### Basics
 
-Builtin types:
+This module lets you validate a Hakit.Document according to an other containing a set of rules for validation.
+(Later it may support validation of arbitrary types.)  
+In the document containing the validation rules the keys are the fields to validate, the value is a map,
+containing a "type" field, which specifies a validator, and either general, or validator specific properties.
 
-    Type            Properties      Comment
+Builtin validators:
+
+    Type            Properties
             
 	int             min, max        
 	float           min, max
@@ -15,19 +20,18 @@ Builtin types:
 	bool            
 	const   
 
-User defined validators are currently not implemented, but they will be soon.  
-
 By default, if a field does not validate, the whole validation fails, unless the property "ignore" is
 set, which means "ignore in case of failure".
 
 Similarly, all validators can be used at validating "lists", with the list related properties:
 
+    General properties:
+
+    ignore          ignore field if it does not validate
     listMin         minimum list size
     listMax         maximum list size
     listIgnore      ignore list elements when they fail,
                     or consider the whole list failed
-
-Currently, both the rules and subject must be of type Hakit.Document.
 
 ### Validating single fields.
 

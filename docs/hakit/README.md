@@ -88,7 +88,7 @@ Accessing an element deep down inside these nested structures can be problematic
 get :: Text -> Document -> DocVal
 ```
 
-We can use dot notation to access elements.
+We can use dot notation to access elements (all functions intended to handle nested Documents support dot notation).
 
 ```haskell
 > get "lived.london" exampleDoc

@@ -4,7 +4,6 @@
 
 This module contains a simplified wrapper above WAI.
 Notes:
-    - response cookies are not working yet.
     - file uploads are not working yet.
 
 -}
@@ -19,6 +18,8 @@ module Hakit.Server (
     -- * Server
     startServer,
     defaultConfig,
+    -- * Convenience functions
+    quickText,
     -- * Other
     queryToDoc
 ) where
@@ -38,6 +39,7 @@ import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.Wai as Wai
 import qualified Data.Conduit as Cond
 import qualified Data.Map as M
+import qualified Data.Word as W
 -- import qualified Hhakit.ExtMime as EM
 import Control.Monad.IO.Class (liftIO)
 
@@ -51,7 +53,7 @@ data Req = Req {
     cookies     :: Document,    -- | Cookies.
     languages   :: [T.Text],    -- | Accept languages sorted by priority.
     files       :: [T.Text]     -- | Absolute file pathes of uploaded files.
-}
+} deriving (Show)
 
 -- | Response status.
 data Status =
@@ -65,12 +67,13 @@ data Status =
     |   ServerError String              -- 500
     |   NotImplemented                  -- 501
     |   Unavailable                     -- 503
+    deriving (Show)
 
 -- | Response content body.
 data Body = Body {
     ctype       :: T.Text,              -- | content type
     content     :: LBS.ByteString       -- | actual content
-}
+} deriving (Show)
 
 -- | Response.
 data Resp = Resp {
@@ -78,13 +81,13 @@ data Resp = Resp {
     body        :: Body,                -- | Response body.
     store       :: Document,            -- | Cookies to store.
     unstore     :: [T.Text]             -- | Keys of cookies to delete.
-}
+} deriving (Show)
 
 -- | Configuration needed to start up the HTTP server.
 data Config = Config {
     httpPort    :: Int,                 -- | Port to listen on (default: 8080)
     temp        :: T.Text               -- | Temporary folder to store uploaded files in.
-}
+} deriving (Show)
 
 defaultConfig :: Config
 defaultConfig = Config 8080 "c:/temp"
@@ -97,15 +100,23 @@ headersToDoc :: [HTypesHeader.Header] -> Document
 headersToDoc h = queryToDoc $ trans h where
     trans x = map (\(key, val) -> (CI.original key, Just val)) x
 
+docValToHeader v = case v of
+    DocString s     -> TE.encodeUtf8 s
+    DocInt i        -> TE.encodeUtf8 $ T.pack $ show i
+    DocFloat f      -> TE.encodeUtf8 $ T.pack $ show f
+    DocBool b       -> TE.encodeUtf8 $ T.pack $ show b
+    otherwise       -> error $ "can't convert to header: " ++ show v
+
 docToHeaders :: Document -> [HTypesHeader.Header]
 docToHeaders d = map f $ M.toList d
-    where f (k, v) = (CI.mk $ TE.encodeUtf8 k, case v of
-            DocString s     -> TE.encodeUtf8 s
-            DocInt i        -> TE.encodeUtf8 $ T.pack $ show i
-            DocFloat f      -> TE.encodeUtf8 $ T.pack $ show f
-            DocBool b       -> TE.encodeUtf8 $ T.pack $ show b
-            otherwise       -> error $ "can't convert to header: " ++ show v
-            )
+    where f (k, v) = (CI.mk $ TE.encodeUtf8 k, docValToHeader v)
+
+-- Set-Cookie: UserID=JohnDoe; Max-Age=3600; Version=1
+docToCookies :: Document -> [HTypesHeader.Header]
+docToCookies d = map f $ M.toList d
+    where
+        f (k, v) = (CI.mk $ TE.encodeUtf8 "Set-Cookie", f1 k v)
+        f1 k1 v1 = BSC.concat [TE.encodeUtf8 $ T.concat [k1, "="], docValToHeader v1, "; Max-Age=360000000; Version=1"]
 
 -- [HTypes.QueryItem] -> Document
 queryToDoc :: [(BS.ByteString, Maybe BS.ByteString)] -> Document
@@ -135,12 +146,32 @@ queryToDoc q = M.fromList $ map singlify (gr (map f q)) where
                             Just n  -> Nil
                             Nothing -> d $ T.pack str
 
+c2w8 :: Char -> W.Word8
+c2w8 = fromIntegral . fromEnum
+
+cookiesFromHeaders :: [(CI.CI BS.ByteString, BS.ByteString)] -> Document
+cookiesFromHeaders hs =
+    let cookieHs = filter (\x -> fst x == (CI.mk $ TE.encodeUtf8 "Cookie")) hs
+        cookieKVs = filter (\x -> not $ BS.isPrefixOf "$Version" x) $ concat $ map (BS.split (c2w8 ' ') . snd) cookieHs
+        cutSemicolon x = if BS.isSuffixOf ";" x
+            then BS.init x
+            else x
+        splitToPair x = let s = BS.split (c2w8 '=') x in
+            if length s /= 2
+                then error $ "malformed cookie header: " ++ show x
+                else (s!!0, s!!1)
+        cookieKVPairs = map (splitToPair . cutSemicolon) cookieKVs
+    in queryToDoc $ map (\(a, b) -> (a, Just b)) cookieKVPairs
+
 {--------------------------------------------------------------------
   Actual HTTP server implementation (using Warp).  
 --------------------------------------------------------------------}
 
 waiTohakit :: Wai.Request -> Req
-waiTohakit wr = Req (Wai.pathInfo wr) (queryToDoc $ Wai.queryString wr) nilDoc [] []
+waiTohakit wr =
+    let params = queryToDoc $ Wai.queryString wr
+        cookies = cookiesFromHeaders $ Wai.requestHeaders wr
+    in Req (Wai.pathInfo wr) params cookies [] []
 
 hakitToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
 hakitToWai fresp = do
@@ -158,7 +189,7 @@ hakitToWai fresp = do
             Unavailable           -> HTypes.status503
         mimeType = "text/html" -- Ma.findWithDefault "text/html" (ctype $ body fr) EM.extToMimeType
         contentType = ("Content-Type", mimeType)
-        cookies = docToHeaders $ store fr
+        cookies = docToCookies $ store fr
     return $ Wai.responseLBS statusCode (contentType:cookies) (content $ body fr)
 
 -- | Start the server. Example:
@@ -168,3 +199,10 @@ startServer conf reqHandler = do
     let p = httpPort conf
     putStrLn $ "Server started listening on port " ++ show p
     Warp.run p (\a -> hakitToWai $ liftIO $ reqHandler (waiTohakit a))
+
+{--------------------------------------------------------------------
+  Convenience functions.  
+--------------------------------------------------------------------}
+
+quickText :: Show a => a -> Resp
+quickText a = Resp OK (Body "txt" $ LBS.fromChunks [BSC.pack $ show a]) nilDoc []
