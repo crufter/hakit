@@ -209,6 +209,16 @@ filtIndex pred xs =
         iterable = zip indexes xs
     in map (\(_, b) -> b) $ filter (\(a, _) -> pred a) iterable
 
+-- Returns following siblings of a tag
+siblings :: Tag -> Tag -> [Tag]
+siblings parent tag =
+    let pch = children parent
+    in if length pch == 0
+        then []
+        else let pos = L.findIndex (== tag) pch in case pos of
+            Just p  -> snd $ L.splitAt (p + 1) pch
+            Nothing -> []
+
 -- Returns true if given tag matches the selector provided.
 matches' :: [Tag] -> Selector -> Tag -> Bool
 matches' parents s tag = case s of
@@ -291,13 +301,25 @@ matches' parents s tag = case s of
             else (pc!!(length pc - n - 1)) == tag 
     Empty           -> length (children tag) == 0
     Parent          -> length (children tag) /= 0
+    NextAdj s       -> if length parents == 0
+        then False
+        else let sibs = take 1 $ siblings (last parents) tag
+            in if length sibs > 0
+                then matches' parents s (sibs!!0)
+                else False
+    NextSibl s      -> if length parents == 0
+        then False
+        else let sibs = siblings (last parents) tag
+            in if length sibs > 0
+                then any (matches' parents s) sibs
+                else False
     Any             -> True
     -- 
     Descendant      -> error "matches': bug: Descendant"
     DirectChild     -> error "matches': bug: DirectChild"
     Placeholder     -> error "matches': bug: Placeholder"
     Comma           -> error "matches': bug: Comma"
-    otherwise        -> error $ "matches': bug: " ++ show s
+    otherwise       -> error $ "matches': bug: " ++ show s
 
 {--------------------------------------------------------------------
   Nested tag functions.  
@@ -416,12 +438,16 @@ data Selector =
     |   ParentIs    Selector
     |   AncestorIs  Selector
     |   Attribute   Regexy T.Text T.Text     -- Regex type, tag name, attrname, attrval
+    |   NextAdj     Selector
+    |   NextSibl    Selector
     -- Operators
     |   Comma
     |   Descendant
     |   DirectChild
     |   IndSep
     |   AndSep
+    |   Plus
+    |   Tilde
     -- Placeholder
     |   Placeholder
     deriving (Eq, Show)
@@ -460,6 +486,8 @@ isOp s = case s of
     DirectChild -> True
     IndSep      -> True
     AndSep      -> True
+    Plus        -> True
+    Tilde       -> True
     otherwise   -> False
 
 -- Inserts e between every two elements of a list if both satisfies the predicate.
@@ -471,22 +499,32 @@ lace pred e l
         else (l!!0):(lace pred e $ tail l)
 
 simple s = (not $ isInd s) && (not $ isOp s)
-notPar s = case s of
+
+-- Returns if a separator will not itself create an And.
+-- (see operatorTable for And construtors)
+notAndy s = case s of
     DirectChild -> False
     Descendant  -> False
+    Plus        -> False
+    Tilde       -> False
     otherwise   -> True
 
 -- This is ugly.
 laceAnd :: [Selector] -> [Selector]
 laceAnd ss = lace f AndSep ss 
     where
-    f a b   | notPar a && not (isOp a) && simple b      = True
+    f a b   | notAndy a && not (isOp a) && simple b     = True
             | otherwise                                 = False
 
 operatorTable ::[[E.Operator Selector () Selector]]
 operatorTable = [
-        [binary (== AndSep) (\a b -> And [a, b]) E.AssocLeft, binary (== IndSep) (\a b -> setCrit b a) E.AssocLeft],
         [
+            binary (== AndSep) (\a b -> And [a, b]) E.AssocLeft,
+            binary (== IndSep) (\a b -> setCrit b a) E.AssocLeft
+        ],
+        [
+            binary (== Tilde) (\a b -> And [a, NextSibl b]) E.AssocLeft,
+            binary (== Plus) (\a b -> And [a, NextAdj b]) E.AssocLeft,
             binary (== Descendant) (\a b -> And [b, AncestorIs a]) E.AssocLeft,
             binary (== DirectChild) (\a b -> And [b, ParentIs a]) E.AssocLeft
         ],
@@ -549,13 +587,6 @@ parseDescendant = do
     P.space
     return $ l Descendant
 
-parseDirectChild :: P.Parser [Selector]
-parseDirectChild = do
-    P.many P.space
-    P.char '>'
-    P.many P.space
-    return $ l DirectChild
-
 parseId :: P.Parser [Selector]
 parseId = do
     P.char '#'
@@ -617,12 +648,16 @@ parseNotHas = do
         ":not("     -> Not $ parseSelPrec $ concat sels
         ":has("     -> Has $ parseSelPrec $ concat sels
 
-parseComma :: P.Parser [Selector]
-parseComma = do
+parseCommaDCSiblings :: P.Parser [Selector]
+parseCommaDCSiblings = do
     P.many P.space
-    P.char ','
+    v <- P.char ',' P.<|> P.char '~' P.<|> P.char '+' P.<|> P.char '>'
     P.many P.space
-    return $ l Comma
+    return $ l $ case v of
+        ','     -> Comma
+        '~'     -> Tilde
+        '+'     -> Plus
+        '>'     -> DirectChild
 
 parseAttr :: P.Parser [Selector]
 parseAttr = do
@@ -654,10 +689,9 @@ parseExpr = P.many1 $ P.try parseId
     P.<|> P.try parseClass
     P.<|> P.try parseAttr
     P.<|> P.try parseTyp
-    P.<|> P.try parseDirectChild
+    P.<|> P.try parseCommaDCSiblings
     P.<|> P.try parseDescendant
     P.<|> P.try parseCons
-    P.<|> P.try parseComma
     P.<|> P.try parseNthChildEq
     P.<|> P.try parseNotHas
 

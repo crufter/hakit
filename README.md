@@ -50,6 +50,8 @@ Selectors planned:
     Y               [attrName~="val"]           - Attribute contains word selector
     Y               [attrName!="val"]           - Attribute not equals selector
     Y               selector1, selector2        - Multiple selectors selector
+    Y               prev + next                 - Next adjacent selector
+    Y               prev ~ siblings             - Next siblings selector
     Y               :not(selector)              - :not() selector
     Y               :has(selector)              - :has() selector
     Y               :eq(3)                      - :eq() selector

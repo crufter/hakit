@@ -122,7 +122,13 @@ cases2 = [
             ("div:even", 4),
             ("div:odd", 4),
             ("div:even:empty", 3),
-            ("div:odd:first.c2", 1)
+            ("div:odd:first.c2", 1),
+            ("* + .c5", 1),
+            ("* ~ .c5", 4),
+            (".c4 ~ .c5", 1),
+            (".c4 + .c5", 1),
+            (".c4 ~ .c6", 1),
+            (".c4 + .c6", 0)
         ]
     )
     ]
