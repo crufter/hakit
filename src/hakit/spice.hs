@@ -33,7 +33,11 @@ import qualified Data.Text as T
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Text.ParserCombinators.Parsec as P
+import qualified Text.ParserCombinators.Parsec.Expr as E
+import qualified Text.ParserCombinators.Parsec.Pos as Pos
+import qualified Text.Parsec.Prim as Pr
 import qualified Data.List.Split as Spl
+import qualified Data.Functor.Identity as I
 
 -- This package contains some questionable temporary names now to avoid clash with prelude.
 
@@ -289,10 +293,11 @@ matches' parents s tag = case s of
     Parent          -> length (children tag) /= 0
     Any             -> True
     -- 
-    Descendant      -> error $ "matches': bug: Descendant"
-    DirectChild     -> error $ "matches': bug: DirectChild"
-    Placeholder     -> error $ "matches': bug: Placeholder"
-    Comma           -> error $ "matches': bug: Comma"
+    Descendant      -> error "matches': bug: Descendant"
+    DirectChild     -> error "matches': bug: DirectChild"
+    Placeholder     -> error "matches': bug: Placeholder"
+    Comma           -> error "matches': bug: Comma"
+    otherwise        -> error $ "matches': bug: " ++ show s
 
 {--------------------------------------------------------------------
   Nested tag functions.  
@@ -411,10 +416,13 @@ data Selector =
     |   ParentIs    Selector
     |   AncestorIs  Selector
     |   Attribute   Regexy T.Text T.Text     -- Regex type, tag name, attrname, attrval
-    -- Intermediate tokens
+    -- Operators
     |   Comma
     |   Descendant
     |   DirectChild
+    |   IndSep
+    |   AndSep
+    -- Placeholder
     |   Placeholder
     deriving (Eq, Show)
 
@@ -422,103 +430,103 @@ data Selector =
   Parsing selectors.  
 --------------------------------------------------------------------}
 
+l :: a -> [a]
+l x = [x]
+
+setCrit x v = case x of
+    Eq s  i             -> Eq v i
+    LesserThan s i      -> LesserThan v i
+    GreaterThan s i     -> GreaterThan v i
+    Even s              -> Even v
+    Odd s               -> Odd v
+    First s             -> First v
+    Last s              -> Last v
+    otherwise           -> error $ "bug: can't set crit of " ++ show x
+
+isInd x = case x of
+    Eq _  _             -> True
+    Even _              -> True
+    Odd _               -> True
+    First _             -> True
+    Last _              -> True
+    LesserThan _ _      -> True
+    GreaterThan _ _     -> True
+    otherwise           -> False
+
+isOp :: Selector -> Bool
+isOp s = case s of
+    Comma       -> True
+    Descendant  -> True
+    DirectChild -> True
+    IndSep      -> True
+    AndSep      -> True
+    otherwise   -> False
+
+-- Inserts e between every two elements of a list if both satisfies the predicate.
+lace :: (a -> a -> Bool) -> a -> [a] -> [a]
+lace pred e l
+    | length l < 2      = l
+    | otherwise         = if pred (l!!0) (l!!1)
+        then (l!!0):e:(lace pred e $ tail l)
+        else (l!!0):(lace pred e $ tail l)
+
+simple s = (not $ isInd s) && (not $ isOp s)
+notPar s = case s of
+    DirectChild -> False
+    Descendant  -> False
+    otherwise   -> True
+
+-- This is ugly.
+laceAnd :: [Selector] -> [Selector]
+laceAnd ss = lace f AndSep ss 
+    where
+    f a b   | notPar a && not (isOp a) && simple b      = True
+            | otherwise                                 = False
+
+operatorTable ::[[E.Operator Selector () Selector]]
+operatorTable = [
+        [binary (== AndSep) (\a b -> And [a, b]) E.AssocLeft, binary (== IndSep) (\a b -> setCrit b a) E.AssocLeft],
+        [
+            binary (== Descendant) (\a b -> And [b, AncestorIs a]) E.AssocLeft,
+            binary (== DirectChild) (\a b -> And [b, ParentIs a]) E.AssocLeft
+        ],
+        [binary (== Comma) (\a b -> Or [a, b]) E.AssocRight]
+    ]
+
+nextPos pos x xs  = Pos.incSourceColumn pos 1
+
+predM :: (a -> Bool) -> (a -> Maybe a)
+predM x = \y -> if x y
+    then Just y
+    else Nothing
+
+binary pred fun assoc = E.Infix (do
+    P.try $ Pr.tokenPrim show nextPos $ predM pred
+    return fun)
+    assoc
+
 parseSelector :: T.Text -> Selector
 parseSelector t =
     let errMsg = "parseSelector: can't parse selector: " ++ show t
         sels = P.parse parseExpr errMsg $ T.unpack t
     in case sels of
         Left e      -> error $ show e
-        Right ss    -> parseSelector' ss
+        Right ss    -> parseSelPrec $ concat ss
 
-parseSelector' :: [Selector] -> Selector
-parseSelector' sels = orify sels
-    where
-    -- Transforms the flat structure selector1, or, selector2 to
-    -- a nested or(selector1, selector2)
-    orify :: [Selector] -> Selector
-    orify selects =
-        let ws :: [[Selector]]
-            ws = (Spl.split . Spl.dropDelims . Spl.oneOf) [Comma] selects
-            fws = filter (\y -> length y > 0) ws
-        in if length selects == 1
-            then selects!!0
-            else if length fws == 1
-                then parentify $ head fws
-                else Or $ map (\x -> if length x == 1
-                    then x!!0
-                    else parentify x) fws
-    -- Transforms the flat structure selector1 relation selector 2
-    -- to a nested and(selector2, (relation(selector1)))
-    parentify :: [Selector] -> Selector
-    parentify selects =
-        let checkValidity xs = if L.isInfixOf [Descendant, DirectChild] xs || L.isInfixOf [DirectChild, Descendant] xs
-                then error $ "parseSelector': directchild and descendant tokens can't follow each other" ++ show xs
-                else xs
-            ws :: [[Selector]]
-            ws = (Spl.split . Spl.oneOf) [Descendant, DirectChild] $ checkValidity selects
-            fws = filter (\y -> length y > 0) ws
-            -- [crit, sep, crit, sep, crit ... ]
-            build xs =
-                let (crit, sep) = L.partition (\z -> z /= Descendant && z /= DirectChild) $ reverse xs
-                    buildRec a b = if length b == 0
-                        then last a
-                        else case head b of
-                            Descendant      -> And [head a, AncestorIs $ buildRec (tail a) $ tail b]
-                            DirectChild     -> And [head a, ParentIs $ buildRec (tail a) $ tail b]
-                in buildRec crit sep
-        in if length selects == 1
-            then selects!!0
-            else if length fws == 1
-                then indexify $ head fws
-                else build $ map (\x -> if length x == 1
-                    then x!!0
-                    else indexify x) fws
-    -- Transforms
-    -- sel1 ind -> ind(sel)
-    -- sel1 ind sel2 -> and(ind(sel1), sel2)
-    indexify :: [Selector] -> Selector
-    indexify selects =
-        let isInd x = case x of
-                Eq _  _             -> True
-                Even _              -> True
-                Odd _               -> True
-                First _             -> True
-                Last _              -> True
-                LesserThan _ _      -> True
-                GreaterThan _ _     -> True
-                otherwise           -> False
-            setCrit x v = case x of
-                Eq s  i             -> Eq v i
-                LesserThan s i      -> LesserThan v i
-                GreaterThan s i     -> GreaterThan v i
-                Even s              -> Even v
-                Odd s               -> Odd v
-                First s             -> First v
-                Last s              -> Last v
-                otherwise           -> x
-            ws :: [[Selector]]
-            ws = (Spl.split . Spl.whenElt) isInd selects
-            fws = filter (\y -> length y > 0) ws
-            build xs = if not $ isInd $ last xs
-                then And [last xs, buildRec $ reverse $ init xs]
-                else buildRec $ reverse xs
-                where
-                buildRec xs = if length xs == 1
-                    then if isInd (xs!!0)
-                        then setCrit (xs!!0) Any
-                        else xs!!0
-                    else setCrit (xs!!0) $ buildRec $ tail xs
-        in if length selects == 1
-            then selects!!0
-            else if length fws == 1
-                then andify $ head fws
-                else build $ map (\x -> if length x == 1
-                    then x!!0
-                    else andify x) fws
-    andify :: [Selector] -> Selector
-    andify selects = if length selects == 1
-        then selects!!0
-        else And selects
+term :: Pr.ParsecT [Selector] () I.Identity Selector
+term = do
+    x <- P.anyToken
+    return x
+
+parseSelPrec :: [Selector] -> Selector
+parseSelPrec ss =
+    let errMsg = "parseSelector: can't parse expression: " ++ show ss
+        prec = E.buildExpressionParser operatorTable term P.<?> "expression"
+        laced = laceAnd ss
+        sels = P.parse prec errMsg laced
+    in case sels of
+        Left e      -> error $ show e
+        Right sel     -> sel
 
 parseString :: P.Parser T.Text
 parseString = do
@@ -536,88 +544,87 @@ parseNonquoted = do
     rest <- P.many (P.letter P.<|> P.digit P.<|> symbol)
     return $ T.pack $ first:rest
 
-parseDescendant :: P.Parser Selector
+parseDescendant :: P.Parser [Selector]
 parseDescendant = do
     P.space
-    return Descendant
+    return $ l Descendant
 
-parseDirectChild :: P.Parser Selector
+parseDirectChild :: P.Parser [Selector]
 parseDirectChild = do
     P.many P.space
     P.char '>'
     P.many P.space
-    return DirectChild
+    return $ l DirectChild
 
-parseId :: P.Parser Selector
+parseId :: P.Parser [Selector]
 parseId = do
     P.char '#'
     id <- parseNonquoted
-    return $ Id id
+    return $ l $ Id id
 
-parseClass :: P.Parser Selector
+parseClass :: P.Parser [Selector]
 parseClass = do
     P.char '.'
     clas <- parseNonquoted
-    return $ Class clas
+    return $ l $ Class clas
 
-parseTyp :: P.Parser Selector
+parseTyp :: P.Parser [Selector]
 parseTyp = do
     typ <- parseNonquoted
-    return $ Type typ
+    return $ l $ Type typ
 
 ts x = P.try $ P.string x
 
-parseCons :: P.Parser Selector
+parseCons :: P.Parser [Selector]
 parseCons = do
     c <- P.char '*' P.<|> P.char ':'
     case c of
-        '*'     -> return Any
+        '*'     -> return $ l Any
         ':'     -> do
             cons <- ts "empty" P.<|> P.string "parent"
                 P.<|> ts "first-child" P.<|> ts "last-child"
                 P.<|> P.string "first" P.<|> P.string "last"
                 P.<|> P.string "even" P.<|> P.string "odd"
             return $ case cons of
-                "parent"        -> Parent
-                "empty"         -> Empty
-                "last"          -> Last Placeholder
-                "first"         -> First Placeholder
-                "first-child"   -> FirstChild
-                "last-child"    -> LastChild
-                "even"          -> Even Placeholder
-                "odd"           -> Odd Placeholder
+                "parent"        -> [Parent]
+                "empty"         -> [Empty]
+                "last"          -> [IndSep, Last Placeholder]
+                "first"         -> [IndSep, First Placeholder]
+                "first-child"   -> [FirstChild]
+                "last-child"    -> [LastChild]
+                "even"          -> [IndSep, Even Placeholder]
+                "odd"           -> [IndSep, Odd Placeholder]
 
-parseNthChildEq :: P.Parser Selector
+parseNthChildEq :: P.Parser [Selector]
 parseNthChildEq = do
     a <- ts ":nth-child(" P.<|> ts ":nth-last-child(" P.<|> ts ":eq("
         P.<|> ts ":lt(" P.<|> ts ":gt("
     num <- P.many1 P.digit
     P.char ')'
     return $ let n = (read num)::Int in case a of
-        ":nth-child("       -> NthChild     n
-        ":nth-last-child("  -> NthLastChild n
-        ":eq("              -> Eq           Placeholder n
-        ":lt("              -> LesserThan   Placeholder n
-        ":gt("              -> GreaterThan  Placeholder n
-        
+        ":nth-child("       -> [NthChild     n]
+        ":nth-last-child("  -> [NthLastChild n]
+        ":eq("              -> [IndSep, Eq Placeholder n]
+        ":lt("              -> [IndSep, LesserThan   Placeholder n]
+        ":gt("              -> [IndSep, GreaterThan  Placeholder n]
 
-parseNotHas :: P.Parser Selector
+parseNotHas :: P.Parser [Selector]
 parseNotHas = do
     a <- ts ":not(" P.<|> ts ":has("
     sels <- parseExpr
     P.string ")"
-    return $ case a of
-        ":not("     -> Not $ parseSelector' sels
-        ":has("     -> Has $ parseSelector' sels
+    return $ l $ case a of
+        ":not("     -> Not $ parseSelPrec $ concat sels
+        ":has("     -> Has $ parseSelPrec $ concat sels
 
-parseComma :: P.Parser Selector
+parseComma :: P.Parser [Selector]
 parseComma = do
     P.many P.space
     P.char ','
     P.many P.space
-    return Comma
+    return $ l Comma
 
-parseAttr :: P.Parser Selector
+parseAttr :: P.Parser [Selector]
 parseAttr = do
     P.char '['
     attrName <- parseNonquoted
@@ -626,7 +633,7 @@ parseAttr = do
         P.<|> P.string "~=" P.<|> P.string "!="
     val <- P.many $ parseNonquoted P.<|> parseString
     P.char ']'
-    return $ case mode of
+    return $ l $ case mode of
         []          -> Attribute Anything       attrName    ""
         ["*="]      -> Attribute Contains       attrName    (val!!0)
         ["^="]      -> Attribute StartsWith     attrName    (val!!0)
@@ -642,7 +649,7 @@ parseAttr = do
 
 -- While try is not required everywhere,
 -- they are there for simplicity and easier extendability.
-parseExpr :: P.Parser [Selector]
+parseExpr :: P.Parser [[Selector]]
 parseExpr = P.many1 $ P.try parseId
     P.<|> P.try parseClass
     P.<|> P.try parseAttr
