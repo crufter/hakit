@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE ExtendedDefaultRules   #-}
+
 module Hakit.Validation (
     -- * Validation
     validate, validateSafe, builtins, Validator,

@@ -40,7 +40,6 @@ import qualified Network.Wai as Wai
 import qualified Data.Conduit as Cond
 import qualified Data.Map as M
 import qualified Data.Word as W
--- import qualified Hhakit.ExtMime as EM
 import Control.Monad.IO.Class (liftIO)
 
 {--------------------------------------------------------------------
@@ -48,6 +47,7 @@ import Control.Monad.IO.Class (liftIO)
 --------------------------------------------------------------------}
 
 data Req = Req {
+    verb        :: T.Text,      -- | HTTP method (eg. GET, POST etc)
     path        :: [T.Text],    -- | Request path split by forward dashes.
     params      :: Document,    -- | Query params.
     cookies     :: Document,    -- | Cookies.
@@ -81,6 +81,7 @@ data Resp = Resp {
     body        :: Body,                -- | Response body.
     store       :: Document,            -- | Cookies to store.
     unstore     :: [T.Text]             -- | Keys of cookies to delete.
+                                        -- Note: we could use Nils to delete a cookie, instead a separate "unstore" field.
 } deriving (Show)
 
 -- | Configuration needed to start up the HTTP server.
@@ -149,9 +150,13 @@ queryToDoc q = M.fromList $ map singlify (gr (map f q)) where
 c2w8 :: Char -> W.Word8
 c2w8 = fromIntegral . fromEnum
 
+-- filterHeaders
+filterHs :: T.Text -> [(CI.CI BS.ByteString, BS.ByteString)] -> [(CI.CI BS.ByteString, BS.ByteString)]
+filterHs t hs = filter (\x -> fst x == (CI.mk $ TE.encodeUtf8 "Cookie")) hs
+
 cookiesFromHeaders :: [(CI.CI BS.ByteString, BS.ByteString)] -> Document
 cookiesFromHeaders hs =
-    let cookieHs = filter (\x -> fst x == (CI.mk $ TE.encodeUtf8 "Cookie")) hs
+    let cookieHs = filterHs "Cookie" hs
         cookieKVs = filter (\x -> not $ BS.isPrefixOf "$Version" x) $ concat $ map (BS.split (c2w8 ' ') . snd) cookieHs
         cutSemicolon x = if BS.isSuffixOf ";" x
             then BS.init x
@@ -171,7 +176,8 @@ waiTohakit :: Wai.Request -> Req
 waiTohakit wr =
     let params = queryToDoc $ Wai.queryString wr
         cookies = cookiesFromHeaders $ Wai.requestHeaders wr
-    in Req (Wai.pathInfo wr) params cookies [] []
+        verb = TE.decodeUtf8 $ Wai.requestMethod wr
+    in Req verb (Wai.pathInfo wr) params cookies [] []
 
 hakitToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
 hakitToWai fresp = do

@@ -1,4 +1,6 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverloadedStrings #-}
+{-# LANGUAGE TypeSynonymInstances   #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE OverloadedStrings      #-}
 
 {-|
 
@@ -98,20 +100,62 @@ data DocVal
     |   Nil
     deriving (Ord, Eq, Show)
 
-isInt a =       case a of DocInt b -> True; otherwise -> False
-toInt a =       case a of DocInt b -> b; otherwise -> error $ show a ++ " is not an Integer."
-isFloat a =     case a of DocFloat b -> True; otherwise -> False
-toFloat a =     case a of DocFloat b -> b; otherwise -> error $ show a ++ " is not a Float."
-isString a =    case a of DocString b -> True; otherwise -> False
-toString a =    case a of DocString b -> b; otherwise -> error $ show a ++ " is not a String (Text)."
-isBool a =      case a of DocBool b -> True; otherwise -> False
-toBool a =      case a of DocBool b -> b; otherwise -> error $ show a ++ " is not a Bool."
-isMap a =       case a of DocMap b -> True; otherwise -> False
-toMap a =       case a of DocMap b -> b; otherwise -> error $ show a ++ " is not a Map."
-isList a =      case a of DocList b -> True; otherwise -> False
-toList a =      case a of DocList b -> b; otherwise -> error $ show a ++ " is not a List."
-isNil a =       case a of Nil -> True; otherwise -> False
-toNil a =       case a of Nil -> Nil; otherwise -> error $ show a ++ " is not a Nil."
+isInt a =       case a of
+    DocInt b -> True
+    otherwise -> False
+
+toInt a =       case a of
+    DocInt b -> b
+    otherwise -> error $ show a ++ " is not an Integer."
+
+isFloat a =     case a of
+    DocFloat b -> True
+    otherwise -> False
+
+toFloat a =     case a of
+    DocFloat b -> b
+    otherwise -> error $ show a ++ " is not a Float."
+
+isString a =    case a of
+    DocString b -> True
+    otherwise -> False
+
+toString a =    case a of
+    DocString b -> b
+    otherwise -> error $ show a ++ " is not a String (Text)."
+
+isBool a =      case a of
+    DocBool b -> True
+    otherwise -> False
+
+toBool a =      case a of
+    DocBool b -> b
+    otherwise -> error $ show a ++ " is not a Bool."
+
+isMap a =       case a of
+    DocMap b -> True
+    otherwise -> False
+
+toMap a =       case a of
+    DocMap b -> b
+    otherwise -> error $ show a ++ " is not a Map."
+
+isList a =      case a of
+    DocList b -> True
+    otherwise -> False
+
+toList a =      case a of
+    DocList b -> b
+    otherwise -> error $ show a ++ " is not a List."
+
+isNil a =       case a of
+    Nil -> True
+    otherwise -> False
+
+toNil a =       case a of
+    Nil -> Nil
+    otherwise -> error $ show a ++ " is not a Nil."
+
 len a = case a of
     DocString s -> T.length s
     DocList l   -> length l
@@ -193,7 +237,9 @@ get' a b = let notFound = (Nil, False) in case a of
             Nothing -> notFound
         otherwise   -> notFound
     AccInt i    -> case b of
-        DocList l   -> if (length l) > (fromIntegral i) then (Safe.atNote "at get'" l (fromIntegral i), True) else notFound
+        DocList l   -> if (length l) > (fromIntegral i)
+            then (Safe.atNote "at get'" l (fromIntegral i), True)
+            else notFound
         otherwise   -> notFound
 
 parseAccElems :: T.Text -> [AccElem]
@@ -227,14 +273,37 @@ get :: T.Text -> Document -> DocVal
 get path doc = fst $ getRec path doc
 
 -- Helper functions for fast retrieval when you are sure the element is present.
-getString   a b = case get a b of DocString s   -> s;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a String (Text)."
-getInt      a b = case get a b of DocInt i      -> i;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not an Int."
-getFloat    a b = case get a b of DocFloat f    -> f;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Float."
-getBool     a b = case get a b of DocBool b     -> b;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Bool."
-getList     a b = case get a b of DocList l     -> l;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a List."
-getMap      a b = case get a b of DocMap m      -> m;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Map."
-getNil      a b = case get a b of Nil           -> Nil; otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Nil."
-getTyped    a b = case get a b of DocTyped t    -> t;   otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not Typed."
+getString   a b = case get a b of
+    DocString s   -> s
+    otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a String (Text)."
+
+getInt      a b = case get a b of
+    DocInt i      -> i
+    otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not an Int."
+
+getFloat    a b = case get a b of
+    DocFloat f    -> f
+    otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Float."
+
+getBool     a b = case get a b of
+    DocBool b     -> b
+    otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Bool."
+
+getList     a b = case get a b of
+    DocList l     -> l
+    otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a List."
+
+getMap      a b = case get a b of
+    DocMap m      -> m
+    otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Map."
+
+getNil      a b = case get a b of
+    Nil           -> Nil
+    otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not a Nil."
+
+getTyped    a b = case get a b of
+    DocTyped t    -> t
+    otherwise -> error $ (T.unpack a) ++ " in " ++ (show b) ++ " is not Typed."
 
 -- | Returns true if the element specified by the path exists.
 -- Supports the same dot notation as get.
@@ -383,7 +452,7 @@ e1 (a,_,_) = a
 e2 (_,a,_) = a
 e3 (_,_,a) = a
 
--- |Groups a list of tuples by first element.
+-- | Groups a list of tuples by first element.
 gr :: (Eq a, Ord a) => [(a, b)] -> [(a, [b])]
 gr = map (\l -> (fst . head $ l, map snd l)) . List.groupBy ((==) `F.on` fst) . List.sortBy (O.comparing fst)
 

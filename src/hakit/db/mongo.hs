@@ -1,4 +1,6 @@
-{-# LANGUAGE FlexibleInstances, OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE OverloadedStrings  #-}
+
 module Hakit.Db.Mongo (
     Db(..),
     new
