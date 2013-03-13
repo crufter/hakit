@@ -54,24 +54,38 @@ toAttrs l = Attrs $ M.fromList l
 attrsToMap :: Attrs -> M.Map T.Text T.Text
 attrsToMap (Attrs at) = at
 
+index :: Tag -> Int
+index t = case t of
+    Doctype i _     -> i
+    Text i _        -> i
+    Tag i _ _ _     -> i
+
+setIndex :: Tag -> Int -> Tag
+setIndex t i = case t of
+    Doctype ind te  -> Doctype i te
+    Text ind te     -> Text i te
+    Tag ind te a c  -> Tag i te a c
+
 type Child = Tag
 
 data Tag =
-        Doctype T.Text
-    |   Text    T.Text  
-    --          Name        Attributes  Children
-    |   Tag     T.Text      Attrs       [Child]
+        Doctype Int     T.Text
+    |   Text    Int     T.Text  
+    --          Ind     Name        Attributes  Children
+    |   Tag     Int     T.Text      Attrs       [Child]
     deriving (Eq)
 
 -- | Create any tag.
-tag n a c   = Tag n (toAttrs a) c
+tag n a c   = Tag (-1) n (toAttrs a) $ indexify c
+    where
+    indexify cs = map (\(a, b) -> setIndex b a) $ zip [0..] cs
 
 -- Some frequently used tags here
-doctype a   = Doctype a
+doctype a   = Doctype (-1) a
 html a c    = tag "html" a c
 head' a c   = tag "head" a c
 body a c    = tag "body" a c
-text t      = Text t
+text t      = Text (-1) t
 div' a c    = tag "div" a c
 
 -- | Create attribute.
@@ -114,22 +128,22 @@ sc x = L.intercalate "" $ map (\y -> tabLines $ show y) x
     where tabLines x = unlines $ map (\y -> "    " ++ y) $ lines x
 
 instance Show Tag where
-    show (Doctype a)    = "<!DOCTYPE " ++ T.unpack a ++ ">"
-    show (Tag n a c)    = case M.lookup n voidElements of
+    show (Doctype i a)  = "<!DOCTYPE " ++ T.unpack a ++ ">"
+    show (Tag i n a c)  = case M.lookup n voidElements of
         Just ()     -> "<" ++ T.unpack n ++ sa a ++ "/>"
         Nothing     -> if length c > 0
             then "<" ++ T.unpack n ++ sa a ++ ">\n" ++ sc c ++ "</" ++ T.unpack n ++ ">"
             else "<" ++ T.unpack n ++ sa a ++ "></" ++ T.unpack n ++ ">"
-    show (Text a)       = T.unpack a
+    show (Text i a)     = T.unpack a
 
 {--------------------------------------------------------------------
   Single tag functions.  
 --------------------------------------------------------------------}
 
-attrs :: Tag ->      Attrs
-attrs (Doctype t)    = toAttrs []
-attrs (Text t)       = toAttrs []
-attrs (Tag _ a _)    = a
+attrs :: Tag ->         Attrs
+attrs (Doctype _ _)     = toAttrs []
+attrs (Text _ _)        = toAttrs []
+attrs (Tag _ _ a _)     = a
 
 attr :: T.Text -> Tag -> Maybe T.Text
 attr attrName tag = case M.lookup attrName $ attrsToMap $ attrs tag of
@@ -138,19 +152,19 @@ attr attrName tag = case M.lookup attrName $ attrsToMap $ attrs tag of
 
 setAttr :: T.Text -> T.Text -> Tag -> Tag
 setAttr key val tag = case tag of
-    Doctype t           -> tag
-    Text t              -> tag
-    Tag n (Attrs a) c   -> Tag n (Attrs $ M.insert key val a) c
+    Doctype _ _         -> tag
+    Text _ _            -> tag
+    Tag i n (Attrs a) c -> Tag i n (Attrs $ M.insert key val a) c
 
-children :: Tag ->       [Child]
-children (Doctype t)     = []
-children (Text t)        = []
-children (Tag _ _ c)     = c
+children :: Tag ->          [Child]
+children (Doctype _ _)      = []
+children (Text _ _)         = []
+children (Tag _ _ _ c)      = c
 
 name :: Tag ->      T.Text
-name (Doctype t)    = "doctype"
-name (Text t)       = "text"
-name (Tag n _ _)    = n
+name (Doctype _ _)  = "doctype"
+name (Text _ _)     = "text"
+name (Tag _ n _ _)  = n
 
 {--------------------------------------------------------------------
   Manipulation.  
@@ -209,16 +223,6 @@ filtIndex pred xs =
         iterable = zip indexes xs
     in map (\(_, b) -> b) $ filter (\(a, _) -> pred a) iterable
 
--- Returns following siblings of a tag
-siblings :: Tag -> Tag -> [Tag]
-siblings parent tag =
-    let pch = children parent
-    in if length pch == 0
-        then []
-        else let pos = L.findIndex (== tag) pch in case pos of
-            Just p  -> snd $ L.splitAt (p + 1) pch
-            Nothing -> []
-
 -- Returns true if given tag matches the selector provided.
 matches' :: [Tag] -> Selector -> Tag -> Bool
 matches' parents s tag = case s of
@@ -246,16 +250,13 @@ matches' parents s tag = case s of
     ParentIs sel    -> if length parents == 0
         then False
         else matches' (init parents) sel $ last parents
-    FirstChild      -> if length parents == 0
-        then False
-        else let ch = children $ last parents in if length ch == 0
-            then False
-            else head ch == tag
+    FirstChild      -> index tag == 0
     LastChild       ->
-        let pc = children $ last parents
-        in if length parents == 0 || length pc == 1 -- A children can not be the first and last too at the same time.
+        let pl = length parents
+            pcl = length . children $ last parents
+        in if pl == 0 || pcl < 2    -- A children can not be the first and last too at the same time.
             then False
-            else last pc == tag
+            else pcl == index tag + 1
     Eq selector n   ->
         let root = calcRoot parents tag
             tm = take (n+1) $ select' selector root
@@ -289,27 +290,24 @@ matches' parents s tag = case s of
         let root = calcRoot parents tag
             tm = filtIndex (\x -> x `mod` 2 == 1) $ select' selector root
         in any (== tag) tm
-    NthChild n      ->
-        let pc = children $ last parents
-        in if length parents == 0 || length pc < n   -- Note that this selector is 1-indexed.
-            then False
-            else (pc!!(n - 1)) == tag
+    NthChild n      -> index tag + 1 == n   -- Note that this selector is 1-indexed.
     NthLastChild n  ->
-        let pc = children $ last parents
-        in if length parents == 0 || length pc < n
+        let pl = length parents
+            pcl = length . children $ last parents
+        in if pl == 0 || pcl < n
             then False
-            else (pc!!(length pc - n - 1)) == tag 
+            else pcl - n - 1 == index tag 
     Empty           -> length (children tag) == 0
     Parent          -> length (children tag) /= 0
     NextAdj s       -> if length parents == 0
         then False
-        else let sibs = take 1 $ siblings (last parents) tag
+        else let sibs = take (index tag) . children $ last parents
             in if length sibs > 0
-                then matches' parents s (sibs!!0)
+                then matches' parents s (last sibs)
                 else False
     NextSibl s      -> if length parents == 0
         then False
-        else let sibs = siblings (last parents) tag
+        else let sibs = take (index tag) . children $ last parents
             in if length sibs > 0
                 then any (matches' parents s) sibs
                 else False
@@ -331,9 +329,8 @@ alter sel t f =
     let sels = parseSelector sel
         alterRec :: [Tag] -> Tag -> Tag
         alterRec parents tag = case tag of
-            Doctype t       -> appif tag
-            Text t          -> appif tag
-            Tag n a c       -> appif $ Tag n a $ map (alterRec $ parents ++ [tag]) c
+            Tag i n a c     -> appif $ Tag i n a $ map (alterRec $ parents ++ [tag]) c
+            otherwise       -> appif tag
             where
                 appif t =
                     if matches' parents sels tag
@@ -348,7 +345,7 @@ remove sel t =
     let sels = parseSelector sel
         removeRec :: [Tag] -> Tag -> Tag
         removeRec parents tag = case tag of
-            Tag n a c   -> Tag n a $ filter (matches' parents sels) $ map (removeRec $ parents ++ [tag]) c
+            Tag i n a c -> Tag i n a $ filter (matches' parents sels) $ map (removeRec $ parents ++ [tag]) c
             otherwise   -> tag
     in removeRec [] t
 
@@ -362,9 +359,8 @@ select' :: Selector -> Tag -> [Tag]
 select' sel t = 
     let selectRec :: [Tag] -> Tag -> [Tag]
         selectRec parents tag = case tag of
-            Doctype t   -> retif tag
-            Text t      -> retif tag
-            Tag n a c   -> retif tag ++ (concat $ map (selectRec $ parents ++ [tag]) c)
+            Tag _ _ _ c -> retif tag ++ (concat $ map (selectRec $ parents ++ [tag]) c)
+            otherwise   -> retif tag
             where
                 retif t =
                     if matches' parents sel tag
@@ -393,6 +389,8 @@ select' sel t =
 -- Y                [attrName~="val"]           - Attribute contains word selector
 -- Y                [attrName!="val"]           - Attribute not equals selector
 -- Y                selector1, selector2        - Multiple selectors selector
+-- Y                prev + next                 - Next adjacent selector
+-- Y                prev ~ siblings             - Next siblings selector
 -- Y                :not(selector)              - :not() selector
 -- Y                :has(selector)              - :has() selector
 -- Y                :eq(3)                      - :eq() selector
@@ -500,20 +498,11 @@ lace pred e l
 
 simple s = (not $ isInd s) && (not $ isOp s)
 
--- Returns if a separator will not itself create an And.
--- (see operatorTable for And construtors)
-notAndy s = case s of
-    DirectChild -> False
-    Descendant  -> False
-    Plus        -> False
-    Tilde       -> False
-    otherwise   -> True
-
 -- This is ugly.
 laceAnd :: [Selector] -> [Selector]
 laceAnd ss = lace f AndSep ss 
     where
-    f a b   | notAndy a && not (isOp a) && simple b     = True
+    f a b   | not (isOp a) && simple b     = True
             | otherwise                                 = False
 
 operatorTable ::[[E.Operator Selector () Selector]]
@@ -523,8 +512,8 @@ operatorTable = [
             binary (== IndSep) (\a b -> setCrit b a) E.AssocLeft
         ],
         [
-            binary (== Tilde) (\a b -> And [a, NextSibl b]) E.AssocLeft,
-            binary (== Plus) (\a b -> And [a, NextAdj b]) E.AssocLeft,
+            binary (== Tilde) (\a b -> And [b, NextSibl a]) E.AssocLeft,
+            binary (== Plus) (\a b -> And [b, NextAdj a]) E.AssocLeft,
             binary (== Descendant) (\a b -> And [b, AncestorIs a]) E.AssocLeft,
             binary (== DirectChild) (\a b -> And [b, ParentIs a]) E.AssocLeft
         ],

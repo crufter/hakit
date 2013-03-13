@@ -121,14 +121,36 @@ cases2 = [
             ("div:last", 1),
             ("div:even", 4),
             ("div:odd", 4),
+            ("div:first-child", 1),
+            ("div:last-child", 1),
+            (":first-child", 2),
+            (":last-child", 1),
+            (":nth-child(1)", 2),
+            ("div:nth-last-child(2)", 1),
             ("div:even:empty", 3),
             ("div:odd:first.c2", 1),
             ("* + .c5", 1),
-            ("* ~ .c5", 4),
+            ("* ~ .c5", 1),
+            (".c1 ~ div", 7),
             (".c4 ~ .c5", 1),
             (".c4 + .c5", 1),
             (".c4 ~ .c6", 1),
             (".c4 + .c6", 0)
+        ]
+    ),
+    (
+        body [] [
+            div' [] [],
+            tag "span" [cat "id" "prev"] [],
+            div' [] [],
+            div' [] [
+                div' [cat "id" "small"] []
+            ],
+            tag "span" [] [],
+            div' [] []
+        ],
+        [
+            ("#prev ~ div", 3) -- This fails if there is only value equality implemented.
         ]
     )
     ]
