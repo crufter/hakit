@@ -580,7 +580,7 @@ parseString = do
     return $ T.pack x
 
 symbol :: P.Parser Char
-symbol = P.oneOf "-"
+symbol = P.oneOf "-_"
 
 parseNonquoted :: P.Parser T.Text
 parseNonquoted = do

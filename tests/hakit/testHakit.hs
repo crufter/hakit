@@ -1,5 +1,7 @@
-{-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
-module TestHakit where
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE ExtendedDefaultRules   #-}
+
+module Tests.Hakit.TestHakit where
 
 import Test.HUnit
 import Hakit
