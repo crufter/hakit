@@ -152,6 +152,33 @@ cases2 = [
         [
             ("#prev ~ div", 3) -- This fails if there is only value equality implemented.
         ]
+    ),
+    -- Testing the aformentioned equality based selectors.
+    (
+        body [] [
+            div' [] [],
+            div' [] [],
+            div' [] [
+                div' [] [],
+                div' [] [],
+                div' [] [],
+                div' [] [
+                    div' [] [],
+                    div' [] [],
+                    div' [] [],
+                    div' [] []
+                ]
+            ],
+            div' [] [],
+            div' [] []
+        ],
+        [
+            ("div:first", 1),
+            ("div:eq(5)", 1),
+            ("div:last", 1),
+            ("div:lt(3)", 3),
+            ("div:gt(2)", 10)
+        ]
     )
     ]
 

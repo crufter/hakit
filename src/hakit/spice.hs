@@ -56,36 +56,53 @@ attrsToMap (Attrs at) = at
 
 index :: Tag -> Int
 index t = case t of
+    Doctype i _     -> f i
+    Text i _        -> f i
+    Tag i _ _ _     -> f i
+    where
+    f x = if length x == 0
+        then -1
+        else last x
+
+indexes :: Tag -> [Int]
+indexes t = case t of
     Doctype i _     -> i
     Text i _        -> i
     Tag i _ _ _     -> i
 
-setIndex :: Tag -> Int -> Tag
-setIndex t i = case t of
-    Doctype ind te  -> Doctype i te
-    Text ind te     -> Text i te
-    Tag ind te a c  -> Tag i te a c
+-- Proof of concept currently, looks quadratic, I suspect lazyness
+-- makes it a bit more effective than a strict version would be, that is
+-- a not too educated guess though.
+setIndex :: Int -> Tag -> Tag
+setIndex i t = case t of
+    Doctype ind te  -> Doctype (i:ind) te
+    Text ind te     -> Text (i:ind) te
+    Tag ind te a c  -> Tag (i:ind) te a $ map (setIndex i) c
 
 type Child = Tag
 
 data Tag =
-        Doctype Int     T.Text
-    |   Text    Int     T.Text  
-    --          Ind     Name        Attributes  Children
-    |   Tag     Int     T.Text      Attrs       [Child]
+        Doctype [Int]       T.Text
+    |   Text    [Int]       T.Text  
+    --          Ind         Name        Attributes      Children
+    |   Tag     [Int]       T.Text      Attrs           [Child]
     deriving (Eq)
 
 -- | Create any tag.
-tag n a c   = Tag (-1) n (toAttrs a) $ indexify c
+tag :: T.Text -> [(T.Text, T.Text)] -> [Tag] -> Tag
+tag n a c   = tag' n (toAttrs a) c
+
+tag' :: T.Text -> Attrs -> [Tag] -> Tag
+tag' n a c = Tag [] n a $ indexify c
     where
-    indexify cs = map (\(a, b) -> setIndex b a) $ zip [0..] cs
+    indexify cs = map (\(a, b) -> setIndex a b) $ zip [0..] cs
 
 -- Some frequently used tags here
-doctype a   = Doctype (-1) a
+doctype a   = Doctype [] a
 html a c    = tag "html" a c
 head' a c   = tag "head" a c
 body a c    = tag "body" a c
-text t      = Text (-1) t
+text t      = Text [] t
 div' a c    = tag "div" a c
 
 -- | Create attribute.
@@ -344,9 +361,9 @@ remove :: T.Text -> Tag -> Tag
 remove sel t =
     let sels = parseSelector sel
         removeRec :: [Tag] -> Tag -> Tag
-        removeRec parents tag = case tag of
-            Tag i n a c -> Tag i n a $ filter (matches' parents sels) $ map (removeRec $ parents ++ [tag]) c
-            otherwise   -> tag
+        removeRec parents t = case t of
+            Tag i n a c -> tag' n a $ filter (matches' parents sels) $ map (removeRec $ parents ++ [t]) c
+            otherwise   -> t
     in removeRec [] t
 
 -- | Returns tags matching the selector.
