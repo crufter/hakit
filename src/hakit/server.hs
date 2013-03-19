@@ -16,10 +16,10 @@ module Hakit.Server (
     Resp(..),
     Config(..),
     -- * Server
-    startServer,
+    startHttp,
     defaultConfig,
     -- * Convenience functions
-    quickText,
+    quickShow,
     -- * Other
     queryToDoc
 ) where
@@ -37,9 +37,11 @@ import qualified Network.HTTP.Types.Header as HTypesHeader
 -- HTTP server impl:
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.Wai as Wai
+import qualified Network.Wai.Parse as WP
 import qualified Data.Conduit as Cond
 import qualified Data.Map as M
 import qualified Data.Word as W
+import qualified Hakit.Mime as Mime
 import Control.Monad.IO.Class (liftIO)
 
 {--------------------------------------------------------------------
@@ -51,8 +53,7 @@ data Req = Req {
     path        :: [T.Text],    -- | Request path split by forward dashes.
     params      :: Document,    -- | Query params.
     cookies     :: Document,    -- | Cookies.
-    languages   :: [T.Text],    -- | Accept languages sorted by priority.
-    files       :: [T.Text]     -- | Absolute file pathes of uploaded files.
+    languages   :: [T.Text]     -- | Accept languages sorted by priority.
 } deriving (Show)
 
 -- | Response status.
@@ -87,14 +88,15 @@ data Resp = Resp {
 -- | Configuration needed to start up the HTTP server.
 data Config = Config {
     httpPort    :: Int,                 -- | Port to listen on (default: 8080)
+    memUploads  :: Bool,                -- | Store file uploads in memory.
     temp        :: T.Text               -- | Temporary folder to store uploaded files in.
 } deriving (Show)
 
 defaultConfig :: Config
-defaultConfig = Config 8080 "c:/temp"
+defaultConfig = Config 8080 False "c:/temp"
 
 {--------------------------------------------------------------------
-  HTTP server implementation helpers.  
+  HTTP server gluing helpers.  
 --------------------------------------------------------------------}
 
 headersToDoc :: [HTypesHeader.Header] -> Document
@@ -152,7 +154,7 @@ c2w8 = fromIntegral . fromEnum
 
 -- filterHeaders
 filterHs :: T.Text -> [(CI.CI BS.ByteString, BS.ByteString)] -> [(CI.CI BS.ByteString, BS.ByteString)]
-filterHs t hs = filter (\x -> fst x == (CI.mk $ TE.encodeUtf8 "Cookie")) hs
+filterHs t hs = filter (\x -> fst x == (CI.mk $ TE.encodeUtf8 t)) hs
 
 cookiesFromHeaders :: [(CI.CI BS.ByteString, BS.ByteString)] -> Document
 cookiesFromHeaders hs =
@@ -168,16 +170,29 @@ cookiesFromHeaders hs =
         cookieKVPairs = map (splitToPair . cutSemicolon) cookieKVs
     in queryToDoc $ map (\(a, b) -> (a, Just b)) cookieKVPairs
 
+langsFromHeaders ::  [(CI.CI BS.ByteString, BS.ByteString)] -> [T.Text]
+langsFromHeaders hs =
+    let langHs = filterHs "Accept-Language" hs
+    in map (\x -> TE.decodeUtf8 $ (BS.split (c2w8 ';') x)!!0) . concat $ map (BS.split (c2w8 ',') . snd) langHs 
+
 {--------------------------------------------------------------------
-  Actual HTTP server implementation (using Warp).  
+  Actual HTTP server gluing (using Warp).  
 --------------------------------------------------------------------}
 
-waiTohakit :: Wai.Request -> Req
-waiTohakit wr =
-    let params = queryToDoc $ Wai.queryString wr
-        cookies = cookiesFromHeaders $ Wai.requestHeaders wr
+waiTohakit :: Wai.Request -> IO Req
+waiTohakit wr = do
+    (paramList, files) <- Cond.runResourceT $ WP.parseRequestBody WP.tempFileBackEnd wr
+    let getParams = queryToDoc $ Wai.queryString wr
+        fileList = map (\(a, b) -> (a, WP.fileName b)) files
+        postParams = queryToDoc . map (\(a, b) -> (a, Just b)) $ paramList ++ fileList
         verb = TE.decodeUtf8 $ Wai.requestMethod wr
-    in Req verb (Wai.pathInfo wr) params cookies [] []
+        params = if verb == "GET"
+            then getParams
+            else postParams
+        reqHs = Wai.requestHeaders wr
+        cookies = cookiesFromHeaders reqHs
+        langs = langsFromHeaders reqHs
+    return $ Req verb (Wai.pathInfo wr) params cookies langs
 
 hakitToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
 hakitToWai fresp = do
@@ -193,22 +208,25 @@ hakitToWai fresp = do
             ServerError s         -> HTypes.status500
             NotImplemented        -> HTypes.status501
             Unavailable           -> HTypes.status503
-        mimeType = "text/html" -- Ma.findWithDefault "text/html" (ctype $ body fr) EM.extToMimeType
+        mimeType = Mime.mimeTypeOf . ctype $ body fr
         contentType = ("Content-Type", mimeType)
         cookies = docToCookies $ store fr
     return $ Wai.responseLBS statusCode (contentType:cookies) (content $ body fr)
 
--- | Start the server. Example:
+-- | Start a HTTP server. Example:
 -- > startServer defaultConfig (\req -> return $ Resp OK (Body "text/html" "Hello.") emptyDoc [])
-startServer :: Config -> (Req -> IO Resp) -> IO ()
-startServer conf reqHandler = do
-    let p = httpPort conf
+startHttp :: Int -> (Req -> IO Resp) -> IO ()
+startHttp p reqHandler = do
     putStrLn $ "Server started listening on port " ++ show p
-    Warp.run p (\a -> hakitToWai $ liftIO $ reqHandler (waiTohakit a))
+    Warp.run p conv
+    where
+        conv a = do
+            a1 <- liftIO $ waiTohakit a
+            hakitToWai . liftIO $ reqHandler a1
 
 {--------------------------------------------------------------------
   Convenience functions.  
 --------------------------------------------------------------------}
 
-quickText :: Show a => a -> Resp
-quickText a = Resp OK (Body "txt" $ LBS.fromChunks [BSC.pack $ show a]) nilDoc []
+quickShow :: Show a => a -> Resp
+quickShow a = Resp OK (Body "txt" $ LBS.fromChunks [BSC.pack $ show a]) nilDoc []

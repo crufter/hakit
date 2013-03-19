@@ -1,15 +1,22 @@
--- Maps file extensions to mime type.
+{-# LANGUAGE OverloadedStrings #-}
 
 module Hakit.Mime (
-    extToMime
+    mimeTypeOf,
+    extToMimeType
 )where
 
 import qualified Data.Map as M
 import qualified Data.Text as T
+import qualified Data.ByteString.Char8 as BSC
 
-extToMimeType :: M.Map T.Text T.Text
+-- | Returns the MimeType of a given file extension with a "text/html" default.
+mimeTypeOf :: T.Text -> BSC.ByteString
+mimeTypeOf x = M.findWithDefault "text/html" x extToMimeType
+
+-- | Maps file extensions to mime type.
+extToMimeType :: M.Map T.Text BSC.ByteString
 extToMimeType =
-    M.fromList $ map (\(a, b) -> (T.pack a, T.pack b))
+    M.fromList
     [
         ("ez",              "application/andrew-inset"),
 		("aw",              "application/applixware"),
