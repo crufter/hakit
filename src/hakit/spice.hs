@@ -8,7 +8,22 @@ module Hakit.Spice (
     body,
     div',
     text,
+    form,
+    input,
+    article,
+    a,
+    title,
+    link,
+    script,
+    -- Attributes
     cat,
+    (-.),
+    id',
+    class',
+    src,
+    href,
+    type',
+    style,
     -- * Nested tag functions
     alter,
     remove,
@@ -104,10 +119,30 @@ head' a c   = tag "head" a c
 body a c    = tag "body" a c
 text t      = Text [] t
 div' a c    = tag "div" a c
+form a c    = tag "form" a c
+input a c   = tag "input" a c
+a a1 c      = tag "a" a1 c
+article a c = tag "article" a c
+title a c   = tag "title" a c
+link a c    = tag "link" a c
+script a c  = tag "script" a c
 
--- | Create attribute.
+-- Frequently used attributes
+id' a       = cat "id" a
+class' a    = cat "class" a
+src a       = cat "src" a
+style a     = cat "style" a
+href a      = cat "href" a
+type' a     = cat "type" a
+
+-- | Create any attribute.
 cat :: T.Text -> T.Text -> (T.Text, T.Text)
 cat a b = (a, b)
+
+infix 0 -.
+-- | Same as cat
+(-.) :: T.Text -> T.Text -> (T.Text, T.Text)
+(-.) a b = cat a b
 
 example :: Tag
 example =
