@@ -228,5 +228,5 @@ startHttp p reqHandler = do
   Convenience functions.  
 --------------------------------------------------------------------}
 
-quickShow :: Show a => a -> Resp
-quickShow a = Resp OK (Body "txt" $ LBS.fromChunks [BSC.pack $ show a]) nilDoc []
+quickShow :: Show a => T.Text -> a -> Resp
+quickShow t a = Resp OK (Body t $ LBS.fromChunks [BSC.pack $ show a]) nilDoc []
