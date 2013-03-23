@@ -1,9 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Tests.Hakit.Spice where
 
 import Hakit.Spice
 import Hakit
 import Test.HUnit
+import qualified Data.Text as T
 
 want what verdict = assertBool (show what) verdict
 
@@ -125,6 +127,9 @@ cases2 = [
             ("div:last-child", 1),
             (":first-child", 2),
             (":last-child", 1),
+            ("*:eq(0)", 1),
+            -- This fails currently.
+            (":eq(0)", 1),
             (":nth-child(1)", 2),
             ("div:nth-last-child(2)", 1),
             ("div:even:empty", 3),
@@ -192,7 +197,37 @@ testSelect = TestCase $ mapM_ f cases2
                 actualMatches   = length $ select selector tag
             in want (c, actualMatches, tag) $ wantedMatches == actualMatches
 
+cases3 = [
+    div' [] [],
+    div' ["class" -. "green blue"] [],
+    div' [] [
+        div' [] []
+    ],
+    div' ["class" -. "zee"] [
+        tag "img" ["src" -. "x.jpg"] [],
+        text "Hello, bello"
+    ],
+    div' [] [
+        div' [] [],
+        text "Yoh\n.",
+        div' [] [
+            div' [] [
+                text "XYZ."
+            ]
+        ]
+    ]
+    ]
+
+testParse = TestCase $ mapM_ f cases3
+    where
+    f a =
+        let sh = render a
+            parsed = parseHtml sh
+            verdict = length parsed == 1 && (parsed!!0) == a
+        in want (a, parsed) verdict
+
 tests = TestList [
     TestLabel "testMatches" testMatches,
-    TestLabel "testSelect" testSelect
+    TestLabel "testSelect" testSelect,
+    TestLabel "testParse" testParse
     ]

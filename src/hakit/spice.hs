@@ -1,5 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
+
+{-|
+
+Spice is jQuery for Haskell.
+
+Known problems:
+
+Some selectors need explicit * to work:
+":eq(0)" does not work but "*:eq(0)" does, same with "> b": "* > b", etc.
+
+-}
+
 module Hakit.Spice (
+    -- * Types
+    Attrs(), Tag(..), Child(..),
+    -- * Rendering
+    render,
     -- * Tag creation
     tag,
     doctype,
@@ -38,8 +54,8 @@ module Hakit.Spice (
     removeClass,
     hasClass,
     toggleClass,
-    -- * Types
-    Attrs(), Tag(..), Child(..),
+    -- * Parse HTML
+    parseHtml,
     -- * Exported for testing purposes only
     matches, parseSelector, example
 ) where
@@ -53,6 +69,9 @@ import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.Parsec.Prim as Pr
 import qualified Data.List.Split as Spl
 import qualified Data.Functor.Identity as I
+import qualified Text.HTML.TagSoup as TS
+import qualified Text.HTML.TagSoup.Tree as TT
+import qualified Data.Char as C
 
 -- This package contains some questionable temporary names now to avoid clash with prelude.
 
@@ -126,6 +145,7 @@ article a c = tag "article" a c
 title a c   = tag "title" a c
 link a c    = tag "link" a c
 script a c  = tag "script" a c
+img a c     = tag "img" a c
 
 -- Frequently used attributes
 id' a       = cat "id" a
@@ -179,6 +199,8 @@ sc :: [Child] -> String
 sc x = L.intercalate "" $ map (\y -> tabLines $ show y) x
     where tabLines x = unlines $ map (\y -> "    " ++ y) $ lines x
 
+-- | Show is used for pretty printing, for actual rendering/serialization
+-- use render.
 instance Show Tag where
     show (Doctype i a)  = "<!DOCTYPE " ++ T.unpack a ++ ">"
     show (Tag i n a c)  = case M.lookup n voidElements of
@@ -187,6 +209,16 @@ instance Show Tag where
             then "<" ++ T.unpack n ++ sa a ++ ">\n" ++ sc c ++ "</" ++ T.unpack n ++ ">"
             else "<" ++ T.unpack n ++ sa a ++ "></" ++ T.unpack n ++ ">"
     show (Text i a)     = T.unpack a
+
+-- | Render tag to text.
+render :: Tag -> T.Text
+render (Doctype i a)  = T.concat ["<!DOCTYPE ", a, ">"]
+render (Tag i n a c)  = case M.lookup n voidElements of
+    Just ()     -> T.concat ["<", n, T.pack $ sa a, "/>"]
+    Nothing     -> if length c > 0
+        then T.concat $ ["<", n, T.pack $ sa a, ">"] ++ map render c ++ ["</", n, ">"]
+        else T.concat $ ["<", n, T.pack $ sa a, "></", n, ">"]
+render (Text i a)     = a
 
 {--------------------------------------------------------------------
   Single tag functions.  
@@ -376,8 +408,8 @@ matches' parents s tag = case s of
 --------------------------------------------------------------------}
 
 -- | Apply function on elements matching the selector.
-alter :: T.Text -> Tag -> (Tag -> Tag) -> Tag
-alter sel t f =
+alter :: T.Text -> (Tag -> Tag) -> Tag -> Tag
+alter sel f t =
     let sels = parseSelector sel
         alterRec :: [Tag] -> Tag -> Tag
         alterRec parents tag = case tag of
@@ -736,4 +768,27 @@ parseExpr = P.many1 $ P.try parseId
     P.<|> P.try parseNthChildEq
     P.<|> P.try parseNotHas
 
--- > P.parse parseExpr "selector" "#id"
+{--------------------------------------------------------------------
+  Parse HTML.  
+--------------------------------------------------------------------}
+
+-- | Turns text into tags.
+parseHtml :: T.Text -> [Tag]
+parseHtml t =
+    let tgs = (TS.parseTags t)::[TS.Tag T.Text]
+        whiteSpace :: TS.Tag T.Text -> Bool
+        whiteSpace t = case t of
+            TS.TagText s    -> T.length (T.filter (not . C.isSpace) s) == 0
+            otherwise       -> False
+        -- Filter text nodes only containing whitespace.
+        tgs' = filter (not . whiteSpace) tgs
+        trees = TT.tagTree tgs'
+        convert :: TT.TagTree T.Text -> Tag
+        convert tr = case tr of
+            TT.TagBranch tname atts childr  -> tag tname atts $ map convert childr
+            TT.TagLeaf tg                   -> case tg of
+                TS.TagOpen tname' atts' -> tag tname' atts' []
+                TS.TagText str          -> text str
+                otherwise               -> error $ "No good: " ++ show tg
+    in map convert trees
+        
