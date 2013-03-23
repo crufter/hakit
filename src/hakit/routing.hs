@@ -4,8 +4,7 @@ module Hakit.Routing (
     parseLocation
 ) where
 
-import Hakit (Location(..))
-import Hakit.Server(queryToDoc) -- Ehh, looks ugly.
+import Hakit (Location(..), interpretDoc)
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text as T
 
@@ -24,5 +23,5 @@ parseLocation scheme t =
                 else Nothing
         mPairs = sequence $ map tester pairs
     in case mPairs of
-        Just mpr    -> Just $ Location scheme $ queryToDoc $ map (\(a, b) -> (TE.encodeUtf8 a, Just (TE.encodeUtf8 b))) mpr
+        Just mpr    -> Just . Location scheme . interpretDoc $ map (\(a, b) -> (TE.encodeUtf8 a, Just (TE.encodeUtf8 b))) mpr
         Nothing     -> Nothing

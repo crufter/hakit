@@ -19,9 +19,7 @@ module Hakit.Server (
     startHttp,
     defaultConfig,
     -- * Convenience functions
-    quickShow,
-    -- * Other
-    queryToDoc
+    quickShow
 ) where
 
 import Hakit
@@ -100,7 +98,7 @@ defaultConfig = Config 8080 False "c:/temp"
 --------------------------------------------------------------------}
 
 headersToDoc :: [HTypesHeader.Header] -> Document
-headersToDoc h = queryToDoc $ trans h where
+headersToDoc h = interpretDoc $ trans h where
     trans x = map (\(key, val) -> (CI.original key, Just val)) x
 
 docValToHeader v = case v of
@@ -121,34 +119,6 @@ docToCookies d = map f $ M.toList d
         f (k, v) = (CI.mk $ TE.encodeUtf8 "Set-Cookie", f1 k v)
         f1 k1 v1 = BSC.concat [TE.encodeUtf8 $ T.concat [k1, "="], docValToHeader v1, "; Max-Age=360000000; Version=1"]
 
--- [HTypes.QueryItem] -> Document
-queryToDoc :: [(BS.ByteString, Maybe BS.ByteString)] -> Document
-queryToDoc q = M.fromList $ map singlify (gr (map f q)) where
-    singlify (key, docValList) = if length docValList > 1
-        then (key, DocList docValList)
-        else (key, Safe.atNote "docList is empty" docValList 0)
-    f (key, val) = case val of
-        Nothing -> (T.pack $ BSC.unpack key, Nil)
-        Just bs -> (T.pack $ BSC.unpack key, interpret bs)
-    iBool str = case (Safe.readMay str)::Maybe Bool of
-        Just b      -> Just b
-        Nothing     -> case str of
-            "true"      -> Just True
-            "false"     -> Just False
-            otherwise   -> Nothing
-    iNil str = if str == "nil" || str == "Nil" then Just Nil else Nothing
-    interpret bs =
-        let str = T.unpack $ TE.decodeUtf8 bs in
-            case (Safe.readMay str)::Maybe Integer of
-                Just i      -> d i
-                Nothing     -> case (Safe.readMay str):: Maybe Double of
-                    Just dbl    -> d dbl
-                    Nothing     -> case iBool str of
-                        Just b      -> d b
-                        Nothing     -> case iNil str of
-                            Just n  -> Nil
-                            Nothing -> d $ T.pack str
-
 c2w8 :: Char -> W.Word8
 c2w8 = fromIntegral . fromEnum
 
@@ -168,7 +138,7 @@ cookiesFromHeaders hs =
                 then error $ "malformed cookie header: " ++ show x
                 else (s!!0, s!!1)
         cookieKVPairs = map (splitToPair . cutSemicolon) cookieKVs
-    in queryToDoc $ map (\(a, b) -> (a, Just b)) cookieKVPairs
+    in interpretDoc $ map (\(a, b) -> (a, Just b)) cookieKVPairs
 
 langsFromHeaders ::  [(CI.CI BS.ByteString, BS.ByteString)] -> [T.Text]
 langsFromHeaders hs =
@@ -182,9 +152,9 @@ langsFromHeaders hs =
 waiTohakit :: Wai.Request -> IO Req
 waiTohakit wr = do
     (paramList, files) <- Cond.runResourceT $ WP.parseRequestBody WP.tempFileBackEnd wr
-    let getParams = queryToDoc $ Wai.queryString wr
+    let getParams = interpretDoc $ Wai.queryString wr
         fileList = map (\(a, b) -> (a, WP.fileName b)) files
-        postParams = queryToDoc . map (\(a, b) -> (a, Just b)) $ paramList ++ fileList
+        postParams = interpretDoc . map (\(a, b) -> (a, Just b)) $ paramList ++ fileList
         verb = TE.decodeUtf8 $ Wai.requestMethod wr
         params = if verb == "GET"
             then getParams

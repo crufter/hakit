@@ -61,7 +61,8 @@ module Hakit (
     flatten,
     ma,
     -- * Other.
-    Location(..)
+    Location(..),
+    interpretDoc
 ) where
 
 import qualified Data.List as List
@@ -74,6 +75,7 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Function as F
 import qualified Data.Ord as O
 import qualified Data.Map as M
+import qualified Data.Text.Encoding as TE
 
 {--------------------------------------------------------------------
   Document.  
@@ -472,3 +474,33 @@ instance Show Location where
                     Nothing     -> error $ "Can't find element: " ++ show x
                 else x
         in "/" ++ (T.unpack $ T.intercalate "/" $ map f a)
+
+-- | Creates a Document out of a list of key value pairs.
+-- Tries to read bools, nils, floats, ints, and creates lists out of duplicate elements.
+-- Maps are not supported yet.
+interpretDoc :: [(BS.ByteString, Maybe BS.ByteString)] -> Document
+interpretDoc q = M.fromList $ map singlify (gr (map f q)) where
+    singlify (key, docValList) = if length docValList > 1
+        then (key, DocList docValList)
+        else (key, Safe.atNote "docList is empty" docValList 0)
+    f (key, val) = case val of
+        Nothing -> (T.pack $ BSC.unpack key, Nil)
+        Just bs -> (T.pack $ BSC.unpack key, interpret bs)
+    iBool str = case (Safe.readMay str)::Maybe Bool of
+        Just b      -> Just b
+        Nothing     -> case str of
+            "true"      -> Just True
+            "false"     -> Just False
+            otherwise   -> Nothing
+    iNil str = if str == "nil" || str == "Nil" then Just Nil else Nothing
+    interpret bs =
+        let str = T.unpack $ TE.decodeUtf8 bs in
+            case (Safe.readMay str)::Maybe Integer of
+                Just i      -> d i
+                Nothing     -> case (Safe.readMay str):: Maybe Double of
+                    Just dbl    -> d dbl
+                    Nothing     -> case iBool str of
+                        Just b      -> d b
+                        Nothing     -> case iNil str of
+                            Just n  -> Nil
+                            Nothing -> d $ T.pack str
