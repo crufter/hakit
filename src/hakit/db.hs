@@ -9,6 +9,7 @@ module Hakit.Db (
     -- * Oid/dbRef
     dbRef,
     oid,
+    idToStr,
     idOf,
     idOf',
     collOf,
@@ -133,10 +134,6 @@ class Db db where
   Implementation of the resolve method.  
 --------------------------------------------------------------------}    
 
-idToStr x = case x of
-    DocTyped DTyped{typ="id",val=DocString s} -> s;
-    otherwise -> error "DocVal is not an id."
-
 -- find documents, then [Document] -> [("id-collname", Document)] so we can build a map out of it easily.
 toCollIdPairs db (grouperStr, location, idList) = do
     docs <- find (setLocation db location) $ dm ["_id" .- ["$in" .- idList]]
@@ -175,8 +172,16 @@ gr' l = map (\l -> (e1 . head $ l, e2 . head $ l, map e3 l)) $ grBy e1 l
   Oid/dbRef helpers.  
 --------------------------------------------------------------------}
 
+-- | Converts a text into an Object Id.
 oid :: T.Text -> DocVal
 oid x = DocTyped $ DTyped "id" (DocString x)
+
+idToStr :: DocVal -> T.Text
+idToStr x = case x of
+    DocTyped DTyped{typ="id", val=v} -> case v of
+        DocString s -> s
+        otherwise   -> error $ "Bad id format " ++ show v
+    otherwise               -> error $ "Not an id " ++ show x
 
 refSep      = " "
 idKey       = "id"
@@ -193,22 +198,29 @@ unpackDbRef x = case x of
     DTyped{typ="dbRef", val=DocMap m}   -> m
     otherwise                           -> error "Can't convert DTyped to a dbRef."
 
+-- | Returns the id part of a dbRef.
 idOf :: DTyped -> T.Text
 idOf x = getString "id" $ unpackDbRef x
 
+-- | Same as oid.
 strToId :: T.Text -> DocVal
-strToId str = d $ DTyped "id" (d str)
+strToId str = oid str
 
 dbRefMustBe = "A dbRef must be of type DTyped"
 
+-- | Returns the id part of a DocVal dbRef if the DocVal
+-- is a meta DocVal, raises error otherwise.
 idOf' :: DocVal -> T.Text
 idOf' x = case x of
     DocTyped d  -> idOf d
     otherwise   -> error dbRefMustBe
 
+-- | Return the collection part of a meta DocVal.
 collOf :: DTyped -> T.Text
 collOf x = getString "coll" $ unpackDbRef x
 
+-- | Returns the collection part of a DocVal dbRef if the DocVal
+-- is a meta DocVal, raises error otherwise.
 collOf' :: DocVal -> T.Text
 collOf' x = case x of
     DocTyped d  -> collOf d
@@ -217,7 +229,13 @@ collOf' x = case x of
 isXTyped t x = case x of
     DocTyped d -> typ d == t;
     otherwise -> False
+
+-- | Returns True of a given DocVal is a DbRef.
+isDbRef :: DocVal -> Bool
 isDbRef x = isXTyped "dbRef" x
+
+-- | Returns True if a given DocVal is an Id.
+isId :: DocVal -> Bool
 isId x = isXTyped "id" x    
 
 dbRefToStr doc = T.intercalate ";" $ map (\(a, b) -> T.concat [toString b, "|", a]) $ List.sortBy (O.comparing fst) (M.toList doc)

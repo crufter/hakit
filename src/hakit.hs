@@ -464,16 +464,21 @@ data Location = Location [T.Text] Document
 
 instance Show Location where
     show (Location a b) =
-        let f x = if T.head x == '#'
-                then case M.lookup (T.tail x) b of
-                    Just docv   -> case docv of
-                        DocString s     -> s
-                        DocFloat f      -> T.pack $ show f
-                        DocInt i        -> T.pack $ show i
-                        otherwise       -> T.pack $ show docv
-                    Nothing     -> error $ "Can't find element: " ++ show x
-                else x
-        in "/" ++ (T.unpack $ T.intercalate "/" $ map f a)
+        "/" ++ case a of
+            []      -> ""
+            (y:ys)  ->
+                let f x = if T.length x == 0
+                        then ""
+                        else if T.head x == '#'
+                            then case M.lookup (T.tail x) b of
+                                Just docv   -> case docv of
+                                    DocString s     -> s
+                                    DocFloat f      -> T.pack $ show f
+                                    DocInt i        -> T.pack $ show i
+                                    otherwise       -> T.pack $ show docv
+                                Nothing     -> error $ "Can't find element: " ++ show x
+                            else x
+                in T.unpack . T.intercalate "/" $ map f a
 
 -- | Creates a Document out of a list of key value pairs.
 -- Tries to read bools, nils, floats, ints, and creates lists out of duplicate elements.

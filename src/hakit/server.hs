@@ -19,7 +19,12 @@ module Hakit.Server (
     startHttp,
     defaultConfig,
     -- * Convenience functions
-    quickShow
+    emptyResp,
+    quickShow,
+    quickText,
+    redirect,
+    setRedirect,
+    setCookie,
 ) where
 
 import Hakit
@@ -167,21 +172,21 @@ waiTohakit wr = do
 hakitToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
 hakitToWai fresp = do
     fr <- fresp
-    let statusCode = case status fr of
-            OK                    -> HTypes.status200
-            Created mloc          -> HTypes.status201
-            Moved mloc            -> HTypes.status301
-            Redirect loc          -> HTypes.status303
-            Unauthorized          -> HTypes.status401
-            Forbidden             -> HTypes.status403
-            NotFound              -> HTypes.status404
-            ServerError s         -> HTypes.status500
-            NotImplemented        -> HTypes.status501
-            Unavailable           -> HTypes.status503
+    let (statusCode, headers) = case status fr of
+            OK                    -> (HTypes.status201, [])
+            Created mloc          -> (HTypes.status201, [])
+            Moved mloc            -> (HTypes.status301, [])
+            Redirect loc          -> (HTypes.status303, [("Location", BSC.pack $ show loc)])
+            Unauthorized          -> (HTypes.status401, [])
+            Forbidden             -> (HTypes.status403, [])
+            NotFound              -> (HTypes.status404, [])
+            ServerError s         -> (HTypes.status500, [])
+            NotImplemented        -> (HTypes.status501, [])
+            Unavailable           -> (HTypes.status503, [])
         mimeType = Mime.mimeTypeOf . ctype $ body fr
-        contentType = ("Content-Type", mimeType)
+        mimeHeader = ("Content-Type", mimeType)
         cookies = docToCookies $ store fr
-    return $ Wai.responseLBS statusCode (contentType:cookies) (content $ body fr)
+    return $ Wai.responseLBS statusCode (headers ++ cookies ++ [mimeHeader]) (content $ body fr)
 
 -- | Start a HTTP server. Example:
 -- > startServer defaultConfig (\req -> return $ Resp OK (Body "text/html" "Hello.") emptyDoc [])
@@ -198,5 +203,27 @@ startHttp p reqHandler = do
   Convenience functions.  
 --------------------------------------------------------------------}
 
+emptyResp :: Resp
+emptyResp = Resp OK (Body "" "") nilDoc []
+
+-- | Quickly show anything.
 quickShow :: Show a => T.Text -> a -> Resp
-quickShow t a = Resp OK (Body t $ LBS.fromChunks [BSC.pack $ show a]) nilDoc []
+quickShow t a =
+    let text = BSC.pack $ show a
+    in Resp OK (Body t $ LBS.fromChunks [text]) nilDoc []
+
+-- | Quickly show text.
+-- Displays text without escaping it unlike quickShow.
+quickText :: T.Text -> T.Text -> Resp
+quickText t a =
+    let text = BSC.pack $ T.unpack a
+    in Resp OK (Body t $ LBS.fromChunks [text]) nilDoc []
+
+redirect :: Location -> Resp
+redirect l = Resp (Redirect l) (Body "" "") nilDoc []
+
+setRedirect :: Location -> Resp -> Resp
+setRedirect l (Resp s b setC unsetC) = Resp (Redirect l) b setC unsetC
+
+setCookie :: Document -> Resp -> Resp
+setCookie d (Resp s b setC unsetC) = Resp s b (M.union d setC) unsetC
