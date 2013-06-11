@@ -185,7 +185,9 @@ hakitToWai fresp = do
             Unavailable           -> (HTypes.status503, [])
         mimeType = Mime.mimeTypeOf . ctype $ body fr
         mimeHeader = ("Content-Type", mimeType)
-        cookies = docToCookies $ store fr
+        storeMap = store fr
+        unstoreMap = M.fromList . map (\x -> (x, DocString "")) $ unstore fr
+        cookies = docToCookies $ M.union storeMap unstoreMap
     return $ Wai.responseLBS statusCode (headers ++ cookies ++ [mimeHeader]) (content $ body fr)
 
 -- | Start a HTTP server. Example:
