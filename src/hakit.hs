@@ -76,6 +76,13 @@ import qualified Data.Function as F
 import qualified Data.Ord as O
 import qualified Data.Map as M
 import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Lazy.Encoding as TEL
+
+-- JSON functions
+import qualified Data.Aeson as J
+import qualified Data.Attoparsec.Number as AP
+import qualified Data.Vector as V
+import qualified Data.HashMap.Strict as HM
 
 {--------------------------------------------------------------------
   Document.  
@@ -445,6 +452,46 @@ instance DocComp Document where
 
 dm :: DocComp d => d -> Document
 dm x = toDoc x
+
+{--------------------------------------------------------------------
+  JSON support.  
+--------------------------------------------------------------------}
+
+j2d :: J.Value -> DocVal
+j2d j =
+    case j of
+        J.Object a  -> DocMap . dm . map (\(k, v) -> (k, j2d v)) $ HM.toList a
+        J.Array a   -> DocList $ map j2d $ V.toList a
+        J.String a  -> DocString a
+        J.Number a  -> case a of
+            AP.I b   -> DocInt b
+            AP.D b   -> DocFloat b
+        J.Bool a    -> DocBool a
+        J.Null      -> Nil
+
+fromJSON :: T.Text -> Document
+fromJSON t =
+    let bs = LBS.fromStrict $ TE.encodeUtf8 t
+        mVal = (J.decode bs)::Maybe J.Object
+    in case mVal of
+        Nothing -> error $ "Unsuccesful decode: " ++ show t
+        Just a  -> dm . map (\(k, v) -> (k, j2d v)) $ HM.toList a
+
+d2j :: DocVal -> J.Value
+d2j d =
+    case d of
+        DocMap a    -> J.Object . HM.fromList . map(\(k, v) -> (k, d2j v)) $ M.toList a
+        DocList a   -> J.Array . V.fromList $ map d2j a
+        DocString a -> J.String a
+        DocInt a    -> J.Number $ AP.I a
+        DocFloat a  -> J.Number $ AP.D a
+        DocBool a   -> J.Bool a
+        Nil         -> J.Null 
+
+toJSON :: Document -> T.Text
+toJSON d =
+    let jObj = J.Object . HM.fromList . map (\(k, v) -> (k, d2j v)) $ M.toList d
+    in TE.decodeUtf8 . LBS.toStrict $ J.encode jObj
 
 {--------------------------------------------------------------------
   Other.  
