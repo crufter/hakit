@@ -46,12 +46,6 @@ module Hakit (
     dt,
     dm,
     (.-),
-    -- * Other
-    nilDoc,
-    e1,
-    e2,
-    e3,
-    gr,
     -- * Operations on documents.
     get,
     exists,
@@ -60,7 +54,15 @@ module Hakit (
     filt,
     flatten,
     ma,
+    -- * JSON support.
+    fromJSON,
+    toJSON,
     -- * Other.
+    nilDoc,
+    e1,
+    e2,
+    e3,
+    gr,
     Location(..),
     interpretDoc
 ) where

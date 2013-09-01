@@ -161,9 +161,31 @@ testUnset = TestCase $ mapM_ f cases4
             check = dm $ e3 c
         in want check res $ res == check
 
+cases5 = [
+    ("{\"a\":42}", ["a" .- 42])
+    ]
+testFromJSON = TestCase $ mapM_ f cases5
+    where
+    f c =
+        let parsed = fromJSON $ fst c
+            check = dm $ snd c
+        in want check parsed $ parsed == check
+
+cases6 = [
+    (["a" .- 42], "{\"a\":42}")
+    ]
+testToJSON = TestCase $ mapM_ f cases6
+    where
+    f c =
+        let stringed = toJSON . dm $ fst c
+            check = snd c
+        in want check stringed $ stringed == check
+
 tests = TestList [
     TestLabel "testGet" testGet,
     TestLabel "testExists" testExists,
     TestLabel "testSet" testSet,
-    TestLabel "testUnset" testUnset
+    TestLabel "testUnset" testUnset,
+    TestLabel "testFromJSON" testFromJSON,
+    TestLabel "testToJSON" testToJSON
     ]

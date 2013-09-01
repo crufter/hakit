@@ -2,7 +2,7 @@
 --  see http://haskell.org/cabal/users-guide/
 
 name:                hakit
-version:             0.1.3.0
+version:             0.1.4.0
 synopsis:            nothing
 -- description:         
 homepage:            https://github.com/johnny-john/hakit
@@ -37,6 +37,10 @@ library
                        text,
                        safe,
                        split,
+                       unordered-containers,
+                       vector,
+                       attoparsec,
+                       aeson,
   -- Hakit.Server depends
                        wai,
                        warp,
