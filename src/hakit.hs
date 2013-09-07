@@ -579,3 +579,6 @@ interpretDoc q = M.fromList $ map singlify (gr (map f q)) where
                         Nothing     -> case iNil str of
                             Just n  -> Nil
                             Nothing -> d $ T.pack str
+
+interpretDoc' :: [(T.Text, T.Text)] -> Document
+interpretDoc' q = interpretDoc $ map (\(a, b) -> (TE.encodeUtf8 a, Just $ TE.encodeUtf8 b)) q
