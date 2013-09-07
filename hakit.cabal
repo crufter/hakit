@@ -2,7 +2,7 @@
 --  see http://haskell.org/cabal/users-guide/
 
 name:                hakit
-version:             0.1.4.0
+version:             0.1.5.0
 synopsis:            nothing
 -- description:         
 homepage:            https://github.com/johnny-john/hakit
@@ -17,7 +17,7 @@ cabal-version:       >=1.8
 
 library
   exposed-modules:     Hakit,
-                       Hakit.Server,
+                       Hakit.Http,
                        Hakit.Validation,
                        Hakit.Db,
                        Hakit.Db.Mongo,
@@ -41,7 +41,7 @@ library
                        vector,
                        attoparsec,
                        aeson,
-  -- Hakit.Server depends
+  -- Hakit.Http depends
                        wai,
                        warp,
                        wai-extra,

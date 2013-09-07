@@ -33,7 +33,8 @@ module Hakit.Http (
 
 import Hakit
 import qualified Data.List as L
-import qualified Data.Org as O
+import qualified Data.Ord as O
+import qualified Data.Function as F
 import qualified Data.Text.Encoding as TE
 import qualified Data.CaseInsensitive as CI
 import qualified Data.ByteString.Lazy as LBS
@@ -66,18 +67,18 @@ data Req = Req {
 
 -- | An empty request. See resp for more info.
 req :: Req
-req = Req "GET" [] H.nilDoc []
+req = Req "GET" [] nilDoc []
 
 method :: Req -> T.Text
 method = metho
 
-setMethod -> T.Text -> Req -> Req
-setMethod m r = r{method=m}
+setMethod :: T.Text -> Req -> Req
+setMethod m r = r{metho=m}
 
 path :: Req -> [T.Text]
 path = pat
 
-setPath = [T.Text] -> Req -> Req
+setPath :: [T.Text] -> Req -> Req
 setPath ps r = r{pat=ps}
 
 params :: Req -> Document
@@ -97,7 +98,7 @@ data Resp = Resp {
 -- Note you don't need something like a constructor (eg. newResp) due to Haskell's
 -- purity (you can't modify values).
 resp :: Resp
-resp = Resp 200 "" "" []
+resp = Resp 200 "" []
 
 -- | Return status code.
 status :: Resp -> Integer
@@ -167,11 +168,12 @@ hakitToWai fresp = do
     let statusCode = intToStatus $ status fr
         headers = respHeaders fr
         mimeType = Mime.mimeTypeOf $ contentType fr
-        mimeHeader = ("Content-Type", mimeType)
+        mimeHeader = ("Content-Type", TE.decodeUtf8 mimeType)
+        waiHs = map (\(k, v) -> (CI.mk $ TE.encodeUtf8 k, TE.encodeUtf8 v)) (mimeHeader:headers)
         -- storeMap = store fr
         -- unstoreMap = M.fromList . map (\x -> (x, DocString "")) $ unstore fr
         -- cookies = docToCookies $ M.union storeMap unstoreMap
-    return $ Wai.responseLBS statusCode (mimeHeader:headers) (body fr)
+    return $ Wai.responseLBS statusCode waiHs (body fr)
 
 -- | Start a HTTP server. Example:
 -- > startServer defaultConfig (\req -> return $ Resp OK (Body "text/html" "Hello.") emptyDoc [])
@@ -208,7 +210,7 @@ replaceHeader key val h =
         moddedHs = map modi $ headers h
     in setHeaders moddedHs h
 
-addHeader :: Headery h -> (T.Text, T.Text) -> h -> h
+addHeader :: Headery h => (T.Text, T.Text) -> h -> h
 addHeader hdr h = setHeaders (hdr:(headers h)) h
 
 c2w8 :: Char -> W.Word8
@@ -241,25 +243,25 @@ docToCookies d = map f $ M.toList d
         f1 k1 v1 = BSC.concat [TE.encodeUtf8 $ T.concat [k1, "="], docValToHeader v1, "; Max-Age=360000000; Version=1"]
 
 
-fromCookies :: [(CI.CI BS.ByteString, BS.ByteString)] -> Document
+fromCookies :: [(T.Text, T.Text)] -> Document
 fromCookies hs =
-    let cookieHs = filterHs "Cookie" hs
-        cookieKVs = filter (\x -> not $ BS.isPrefixOf "$Version" x) $ concat $ map (BS.split (c2w8 ' ') . snd) cookieHs
-        cutSemicolon x = if BS.isSuffixOf ";" x
-            then BS.init x
+    let cookieHs = filter (\(k, v) -> k == "Cookie") hs
+        cookieKVs = filter (\x -> not $ T.isPrefixOf "$Version" x) . concat $ map (T.splitOn " " . snd) cookieHs
+        cutSemicolon x = if T.isSuffixOf ";" x
+            then T.init x
             else x
-        splitToPair x = let s = BS.split (c2w8 '=') x in
+        splitToPair x = let s = T.splitOn "=" x in
             if length s /= 2
                 then error $ "malformed cookie header: " ++ show x
                 else (s!!0, s!!1)
         cookieKVPairs = map (splitToPair . cutSemicolon) cookieKVs
-    in interpretDoc $ map (\(a, b) -> (a, Just b)) cookieKVPairs
+    in interpretDoc' cookieKVPairs
 
-cookies :: Resp -> H.Document
-cookies res =
+cookies :: Headery h => h -> Document
+cookies res = fromCookies $ headers res
 
-setCookies :: H.Document -> Resp -> Resp
-setCookies doc res =
+-- setCookies :: Headery h => H.Document -> h -> h
+-- setCookies doc res =
 
 {--------------------------------------------------------------------
   - Accept language.  
@@ -267,16 +269,18 @@ setCookies doc res =
 
 -- | Sorts languages by their Qs
 -- Expected format: da, en-gb;q=0.8, en;q=0.7
-languageQs :: T.Text -> [(Integer, T.Text)]
+languageQs :: T.Text -> [(T.Text, T.Text)] -- ("en", "0.7")
 languageQs hs =
-    let ls = map T.strip $ T.split ","
-        toTuples =
-            let xs = map T.strip $ T.split ";" ls
+    let ls = map T.strip $ T.splitOn "," hs
+        toTuples :: T.Text -> (T.Text, T.Text)
+        toTuples l =
+            let xs = map T.strip $ T.splitOn ";" l
             in if length xs == 2
                 then (xs!!0, xs!!1)
                 else (xs!!0, "1.0")
+        pairs :: [(T.Text, T.Text)]
         pairs = map toTuples ls
-    in L.sortBy (O.compare 'O.on' snd) pairs
+    in L.sortBy (O.compare `F.on` snd) pairs
 
 -- | Returns the language codes sorted by desirability.
 languages :: Headery h => h -> [T.Text]
@@ -287,7 +291,7 @@ languages res =
             else if length lhs == 1
                 then snd $ head lhs
                 else T.intercalate ", " $ map snd lhs
-    in languageQs lh
+    in map fst $ languageQs lh
 
 -- addLanguage :: Headery h => (T.Text, Integer) -> h -> h
 
@@ -296,9 +300,13 @@ languages res =
 --------------------------------------------------------------------}
 
 contentType :: Headery h => h -> T.Text
-contentType = cType
+contentType h =
+    let ct = map snd $ filter (\(k, v) -> k == "Content-Type") $ headers h
+    in if length ct > 0
+        then head ct 
+        else ""
 
 -- | Sets the content type. Does recognize file extensions and uses
 -- the appropriate mime type instead.
-setContentType :: Headery h => T.Text -> h -> h
-setContentType t r = r{cType=t}
+-- setContentType :: Headery h => T.Text -> h -> h
+-- setContentType t r = r{cType=t}

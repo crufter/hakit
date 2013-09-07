@@ -453,8 +453,8 @@ instance DocComp [(T.Text, DocVal)] where
 instance DocComp Document where
     toDoc = id
 
-instance DocValComp dc => DocComp (M.Map T.Text dc) where
-    toDoc v = dm . map (\(k, val) -> (k, toDocVal val)) $ M.toList v
+--instance DocValComp dc => DocComp (M.Map T.Text dc) where
+--    toDoc v = dm . map (\(k, val) -> (k, toDocVal val)) $ M.toList v
 
 dm :: DocComp d => d -> Document
 dm x = toDoc x
