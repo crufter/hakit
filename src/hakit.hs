@@ -473,11 +473,29 @@ j2d j =
 
 fromJSON :: T.Text -> Document
 fromJSON t =
+    let r = fromJSON' t
+    in case r of
+        Nothing     -> error $ "Unsuccesful decode: " ++ show t
+        Just a      -> a
+    
+
+fromJSON' :: T.Text -> Maybe Document
+fromJSON t =
     let bs = LBS.fromStrict $ TE.encodeUtf8 t
         mVal = (J.decode bs)::Maybe J.Object
     in case mVal of
-        Nothing -> error $ "Unsuccesful decode: " ++ show t
-        Just a  -> dm . map (\(k, v) -> (k, j2d v)) $ HM.toList a
+        Nothing -> Nothing
+        Just a  -> Just . dm . map (\(k, v) -> (k, j2d v)) $ HM.toList a
+
+-- | Would be much better to have a generic
+-- Maybe a -> (a, Bool), but I don't know how to get
+-- zero value of any type. TOOD: look that up.
+fromJSON'' :: T.Text -> (Document, Bool)
+fromJSON'' t =
+    let r = fromJSON'
+    in case r of
+        Nothing     -> (nilDoc, False)
+        Just a      -> (a,      True)
 
 d2j :: DocVal -> J.Value
 d2j d =

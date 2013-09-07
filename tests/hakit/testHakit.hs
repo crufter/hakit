@@ -162,7 +162,16 @@ testUnset = TestCase $ mapM_ f cases4
         in want check res $ res == check
 
 cases5 = [
-    ("{\"a\":42}", ["a" .- 42])
+    ("{\"a\":42}", ["a" .- 42]),
+    ("{\"a\":43, \"b\":[1,2,3]}", ["a" .- 43, "b" .- [d 1, d 2, d 3]]),
+    (
+        "{\"a\": {\"b\": 44}}",
+        [
+            "a" .- [
+                "b" .- 44
+            ]
+        ]
+    )
     ]
 testFromJSON = TestCase $ mapM_ f cases5
     where
@@ -172,9 +181,23 @@ testFromJSON = TestCase $ mapM_ f cases5
         in want check parsed $ parsed == check
 
 cases6 = [
-    (["a" .- 42], "{\"a\":42}")
+    (["a" .- 42], "{\"a\":42}"),
+    (["a" .- 43, "b" .- [d 1, d 2, d 3]], "{\"a\":43, \"b\":[1,2,3]}")
     ]
 testToJSON = TestCase $ mapM_ f cases6
+    where
+    f c =
+        let stringed = toJSON . dm $ fst c
+            check = snd c
+        in want check stringed $ stringed == check
+
+
+cases7 = [
+    (
+
+    )
+    ]
+testMa = TestCase $ mapM_ f cases6
     where
     f c =
         let stringed = toJSON . dm $ fst c
