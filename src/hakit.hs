@@ -64,7 +64,8 @@ module Hakit (
     e3,
     gr,
     Location(..),
-    interpretDoc
+    interpretDoc,
+    interpretDoc'
 ) where
 
 import qualified Data.List as List
