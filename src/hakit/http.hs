@@ -11,16 +11,29 @@ Notes:
 module Hakit.Http (
     -- * Types
     Req,
+    req,
+    method,
+    setMethod,
+    path,
+    setPath,
+    params,
+    setParams,
     Resp,
+    resp,
+    status,
+    setStatus,
+    body,
+    setBody,
     Config(..),
     -- * Server
     startServer,
     defaultConfig,
     -- * Convenience stuff
-    resp,
 ) where
 
 import Hakit
+import qualified Data.List as L
+import qualified Data.Org as O
 import qualified Data.Text.Encoding as TE
 import qualified Data.CaseInsensitive as CI
 import qualified Data.ByteString.Lazy as LBS
@@ -45,19 +58,73 @@ import Control.Monad.IO.Class (liftIO)
 --------------------------------------------------------------------}
 
 data Req = Req {
-    method      :: T.Text,              -- | HTTP method (eg. GET, POST etc)
-    path        :: [T.Text],            -- | Request path split by forward dashes.
-    params      :: Document,            -- | Query params.
+    metho       :: T.Text,              -- | HTTP method (eg. GET, POST etc)
+    pat         :: [T.Text],            -- | Request path split by forward dashes.
+    param       :: Document,            -- | Query params.
     reqHeaders  :: [(T.Text, T.Text)]   -- | Headers.
 } deriving (Show)
 
+-- | An empty request. See resp for more info.
+req :: Req
+req = Req "GET" [] H.nilDoc []
+
+method :: Req -> T.Text
+method = metho
+
+setMethod -> T.Text -> Req -> Req
+setMethod m r = r{method=m}
+
+path :: Req -> [T.Text]
+path = pat
+
+setPath = [T.Text] -> Req -> Req
+setPath ps r = r{pat=ps}
+
+params :: Req -> Document
+params = param
+
+setParams :: Document -> Req -> Req
+setParams d r = r{param=d}
+
 -- | Response.
 data Resp = Resp {
-    status          :: Integer,             -- | Status code.
-    contentType     :: T.Text,              -- | Response body content type.
-    body            :: LBS.ByteString,      -- | Response body.
+    statusCode      :: Integer,             -- | Status code.
+    bod             :: LBS.ByteString,      -- | Response body.
     respHeaders     :: [(T.Text, T.Text)]
 } deriving (Show)
+
+-- | An empty response to use as a starting point.
+-- Note you don't need something like a constructor (eg. newResp) due to Haskell's
+-- purity (you can't modify values).
+resp :: Resp
+resp = Resp 200 "" "" []
+
+-- | Return status code.
+status :: Resp -> Integer
+status res = statusCode res
+
+-- | Set status code
+setStatus :: Integer -> Resp -> Resp
+setStatus i res = res{statusCode=i}
+
+body :: Resp -> LBS.ByteString
+body = bod
+
+setBody :: LBS.ByteString -> Resp -> Resp
+setBody b r = r{bod=b}
+
+-- | A typeclass for Req and Resp types, since they all have headers
+class Headery a where
+    headers :: a -> [(T.Text, T.Text)]
+    setHeaders :: [(T.Text, T.Text)] -> a -> a
+
+instance Headery Req where
+    headers = reqHeaders
+    setHeaders hs req = req{reqHeaders=hs}
+
+instance Headery Resp where
+    headers = respHeaders
+    setHeaders hs resp = resp{respHeaders=hs}
 
 -- | Configuration needed to start up the HTTP server.
 data Config = Config {
@@ -68,58 +135,6 @@ data Config = Config {
 
 defaultConfig :: Config
 defaultConfig = Config 8080 False "c:/temp"
-
-{--------------------------------------------------------------------
-  HTTP server gluing helpers.  
---------------------------------------------------------------------}
-
-headersToDoc :: [HTypesHeader.Header] -> Document
-headersToDoc h = interpretDoc $ trans h where
-    trans x = map (\(key, val) -> (CI.original key, Just val)) x
-
-docValToHeader v = case v of
-    DocString s     -> TE.encodeUtf8 s
-    DocInt i        -> TE.encodeUtf8 $ T.pack $ show i
-    DocFloat f      -> TE.encodeUtf8 $ T.pack $ show f
-    DocBool b       -> TE.encodeUtf8 $ T.pack $ show b
-    otherwise       -> error $ "can't convert to header: " ++ show v
-
-docToHeaders :: Document -> [HTypesHeader.Header]
-docToHeaders d = map f $ M.toList d
-    where f (k, v) = (CI.mk $ TE.encodeUtf8 k, docValToHeader v)
-
--- Set-Cookie: UserID=JohnDoe; Max-Age=3600; Version=1
-docToCookies :: Document -> [HTypesHeader.Header]
-docToCookies d = map f $ M.toList d
-    where
-        f (k, v) = (CI.mk $ TE.encodeUtf8 "Set-Cookie", f1 k v)
-        f1 k1 v1 = BSC.concat [TE.encodeUtf8 $ T.concat [k1, "="], docValToHeader v1, "; Max-Age=360000000; Version=1"]
-
-c2w8 :: Char -> W.Word8
-c2w8 = fromIntegral . fromEnum
-
--- filterHeaders
-filterHs :: T.Text -> [(CI.CI BS.ByteString, BS.ByteString)] -> [(CI.CI BS.ByteString, BS.ByteString)]
-filterHs t hs = filter (\x -> fst x == (CI.mk $ TE.encodeUtf8 t)) hs
-
-fromCookies :: [(CI.CI BS.ByteString, BS.ByteString)] -> Document
-fromCookies hs =
-    let cookieHs = filterHs "Cookie" hs
-        cookieKVs = filter (\x -> not $ BS.isPrefixOf "$Version" x) $ concat $ map (BS.split (c2w8 ' ') . snd) cookieHs
-        cutSemicolon x = if BS.isSuffixOf ";" x
-            then BS.init x
-            else x
-        splitToPair x = let s = BS.split (c2w8 '=') x in
-            if length s /= 2
-                then error $ "malformed cookie header: " ++ show x
-                else (s!!0, s!!1)
-        cookieKVPairs = map (splitToPair . cutSemicolon) cookieKVs
-    in interpretDoc $ map (\(a, b) -> (a, Just b)) cookieKVPairs
-
-langsFromHeaders ::  [(CI.CI BS.ByteString, BS.ByteString)] -> [T.Text]
-langsFromHeaders hs =
-    let langHs = filterHs "Accept-Language" hs
-    in map (\x -> TE.decodeUtf8 $ (BS.split (c2w8 ';') x)!!0) . concat $ map (BS.split (c2w8 ',') . snd) langHs 
 
 {--------------------------------------------------------------------
   Actual HTTP server gluing (using Warp).  
@@ -150,13 +165,13 @@ hakitToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
 hakitToWai fresp = do
     fr <- fresp
     let statusCode = intToStatus $ status fr
-        headers = []
+        headers = respHeaders fr
         mimeType = Mime.mimeTypeOf $ contentType fr
         mimeHeader = ("Content-Type", mimeType)
         -- storeMap = store fr
         -- unstoreMap = M.fromList . map (\x -> (x, DocString "")) $ unstore fr
         -- cookies = docToCookies $ M.union storeMap unstoreMap
-    return $ Wai.responseLBS statusCode [] (body fr)
+    return $ Wai.responseLBS statusCode (mimeHeader:headers) (body fr)
 
 -- | Start a HTTP server. Example:
 -- > startServer defaultConfig (\req -> return $ Resp OK (Body "text/html" "Hello.") emptyDoc [])
@@ -179,8 +194,111 @@ startServer p reqHandler = do
   Convenience stuff.  
 --------------------------------------------------------------------}
 
--- | An empty response to use as a starting point.
--- Note you don't need something like a constructor (eg. newResp) due to Haskell's
--- purity (you can't modify values).
-resp :: Resp
-resp = Resp 200 "" "" []
+{--------------------------------------------------------------------
+  - Headers.  
+--------------------------------------------------------------------}
+
+-- | Replaces a headers' value having a key equal to the first argument
+-- with the second argument.
+replaceHeader :: Headery h => T.Text -> T.Text -> h -> h
+replaceHeader key val h = 
+    let modi hdr@(k, v) = if k == key
+            then hdr
+            else (k, val)
+        moddedHs = map modi $ headers h
+    in setHeaders moddedHs h
+
+addHeader :: Headery h -> (T.Text, T.Text) -> h -> h
+addHeader hdr h = setHeaders (hdr:(headers h)) h
+
+c2w8 :: Char -> W.Word8
+c2w8 = fromIntegral . fromEnum
+
+{--------------------------------------------------------------------
+  - Cookies.  
+--------------------------------------------------------------------}
+
+headersToDoc :: [HTypesHeader.Header] -> Document
+headersToDoc h = interpretDoc $ trans h where
+    trans x = map (\(key, val) -> (CI.original key, Just val)) x
+
+docValToHeader v = case v of
+    DocString s     -> TE.encodeUtf8 s
+    DocInt i        -> TE.encodeUtf8 $ T.pack $ show i
+    DocFloat f      -> TE.encodeUtf8 $ T.pack $ show f
+    DocBool b       -> TE.encodeUtf8 $ T.pack $ show b
+    otherwise       -> error $ "can't convert to header: " ++ show v
+
+docToHeaders :: Document -> [HTypesHeader.Header]
+docToHeaders d = map f $ M.toList d
+    where f (k, v) = (CI.mk $ TE.encodeUtf8 k, docValToHeader v)
+
+-- Set-Cookie: UserID=JohnDoe; Max-Age=3600; Version=1
+docToCookies :: Document -> [HTypesHeader.Header]
+docToCookies d = map f $ M.toList d
+    where
+        f (k, v) = (CI.mk $ TE.encodeUtf8 "Set-Cookie", f1 k v)
+        f1 k1 v1 = BSC.concat [TE.encodeUtf8 $ T.concat [k1, "="], docValToHeader v1, "; Max-Age=360000000; Version=1"]
+
+
+fromCookies :: [(CI.CI BS.ByteString, BS.ByteString)] -> Document
+fromCookies hs =
+    let cookieHs = filterHs "Cookie" hs
+        cookieKVs = filter (\x -> not $ BS.isPrefixOf "$Version" x) $ concat $ map (BS.split (c2w8 ' ') . snd) cookieHs
+        cutSemicolon x = if BS.isSuffixOf ";" x
+            then BS.init x
+            else x
+        splitToPair x = let s = BS.split (c2w8 '=') x in
+            if length s /= 2
+                then error $ "malformed cookie header: " ++ show x
+                else (s!!0, s!!1)
+        cookieKVPairs = map (splitToPair . cutSemicolon) cookieKVs
+    in interpretDoc $ map (\(a, b) -> (a, Just b)) cookieKVPairs
+
+cookies :: Resp -> H.Document
+cookies res =
+
+setCookies :: H.Document -> Resp -> Resp
+setCookies doc res =
+
+{--------------------------------------------------------------------
+  - Accept language.  
+--------------------------------------------------------------------}
+
+-- | Sorts languages by their Qs
+-- Expected format: da, en-gb;q=0.8, en;q=0.7
+languageQs :: T.Text -> [(Integer, T.Text)]
+languageQs hs =
+    let ls = map T.strip $ T.split ","
+        toTuples =
+            let xs = map T.strip $ T.split ";" ls
+            in if length xs == 2
+                then (xs!!0, xs!!1)
+                else (xs!!0, "1.0")
+        pairs = map toTuples ls
+    in L.sortBy (O.compare 'O.on' snd) pairs
+
+-- | Returns the language codes sorted by desirability.
+languages :: Headery h => h -> [T.Text]
+languages res =
+    let lhs = filter (\(k, v) -> k == "Accept-Language") $ headers res
+        lh = if length lhs == 0
+            then ""
+            else if length lhs == 1
+                then snd $ head lhs
+                else T.intercalate ", " $ map snd lhs
+    in languageQs lh
+
+-- addLanguage :: Headery h => (T.Text, Integer) -> h -> h
+
+{--------------------------------------------------------------------
+  - Content type.  
+--------------------------------------------------------------------}
+
+contentType :: Headery h => h -> T.Text
+contentType = cType
+
+-- | Sets the content type. Does recognize file extensions and uses
+-- the appropriate mime type instead.
+setContentType :: Headery h => T.Text -> h -> h
+setContentType t r = r{cType=t}
