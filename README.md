@@ -22,8 +22,8 @@ to speed, shall we?
 #### [Hakit](docs/hakit)
 A module containing an easy to use data type similar to that of dynamic languages.
 
-#### Hakit.Server
-A very simple to use HTTP server.
+#### Hakit.Http
+A very simple to use HTTP server/client.
 
 #### [Hakit.Validation](docs/validation)
 Validate data easily.

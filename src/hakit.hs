@@ -452,6 +452,9 @@ instance DocComp [(T.Text, DocVal)] where
 instance DocComp Document where
     toDoc = id
 
+instance DocValComp dc => DocComp (M.Map T.Text dc) where
+    toDoc v = dm . map (\(k, val) -> (k, toDocVal val)) $ M.toList v
+
 dm :: DocComp d => d -> Document
 dm x = toDoc x
 
@@ -480,7 +483,7 @@ fromJSON t =
     
 
 fromJSON' :: T.Text -> Maybe Document
-fromJSON t =
+fromJSON' t =
     let bs = LBS.fromStrict $ TE.encodeUtf8 t
         mVal = (J.decode bs)::Maybe J.Object
     in case mVal of
@@ -492,7 +495,7 @@ fromJSON t =
 -- zero value of any type. TOOD: look that up.
 fromJSON'' :: T.Text -> (Document, Bool)
 fromJSON'' t =
-    let r = fromJSON'
+    let r = fromJSON' t
     in case r of
         Nothing     -> (nilDoc, False)
         Just a      -> (a,      True)
