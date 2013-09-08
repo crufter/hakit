@@ -256,7 +256,8 @@ docToCookies d = map f $ M.toList d
     where
         f (k, v) = ("Set-Cookie", f1 k v)
         f1 k1 v1 = T.concat [
-            T.concat [k1, "="],
+            k1,
+            "=",
             docValToHeaderVal v1,
             "; Max-Age=360000000; Version=1"
             ]
