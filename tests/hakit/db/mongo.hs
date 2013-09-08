@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE ExtendedDefaultRules   #-}
+
 module Tests.Hakit.Db.Mongo where
 
 import Test.HUnit

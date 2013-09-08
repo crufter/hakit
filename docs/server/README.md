@@ -1,7 +1,0 @@
-[Back](/)
-
-Hakit.Server
-=====
-
-### Example
-

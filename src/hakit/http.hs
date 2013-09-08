@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeSynonymInstances   #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE OverloadedStrings      #-}
 
 {-|
 
@@ -122,8 +124,23 @@ setStatus i res = res{statusCode=i}
 body :: Resp -> LBS.ByteString
 body = bod
 
-setBody :: LBS.ByteString -> Resp -> Resp
-setBody b r = r{bod=b}
+class LbsComp a where
+    toLbs :: a -> LBS.ByteString
+
+instance LbsComp String where
+    toLbs = LBS.fromStrict . TE.encodeUtf8 . T.pack
+
+instance LbsComp T.Text where
+    toLbs = LBS.fromStrict . TE.encodeUtf8
+
+instance LbsComp LBS.ByteString where
+    toLbs = id
+
+instance LbsComp BS.ByteString where
+    toLbs = LBS.fromStrict
+
+setBody :: LbsComp a => a -> Resp -> Resp
+setBody b r = r{bod=toLbs b}
 
 -- | A typeclass for Req and Resp types, since they all have headers
 class Headery a where
@@ -359,3 +376,13 @@ contentType h =
 -- the appropriate mime type instead.
 setContentType :: Headery h => T.Text -> h -> h
 setContentType t h = setHeader "Content-Type" t h
+
+{--------------------------------------------------------------------
+  - Request.  
+--------------------------------------------------------------------}
+
+{--------------------------------------------------------------------
+  - Response.  
+--------------------------------------------------------------------}
+
+
