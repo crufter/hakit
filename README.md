@@ -51,7 +51,6 @@ Lets you start cronlike jobs from your Haskell application.
 - Make it so simple and obvious that one can pick it up in a couple of minutes.
 - Be gentle to people with a non-fp background.
 - Be fun to use.
-- Reduce time to market of unique web apps by providing tremendous amount of flexibility.
 
 **Progress**: very-very-very early stage.
 

@@ -2,14 +2,14 @@
 --  see http://haskell.org/cabal/users-guide/
 
 name:                hakit
-version:             0.1.5.0
+version:             0.1.6.0
 synopsis:            nothing
 -- description:         
 homepage:            https://github.com/johnny-john/hakit
 license:             BSD3
 license-file:        LICENSE
 author:              Dobronszki Janos
-maintainer:          janosdobronszki@citromail.hu
+maintainer:          dobronszki@gmail.com
 -- copyright:           
 category:            Web
 build-type:          Simple

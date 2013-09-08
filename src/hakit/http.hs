@@ -29,6 +29,16 @@ module Hakit.Http (
     startServer,
     defaultConfig,
     -- * Convenience stuff
+    setHeader,
+    addHeader,
+    cookies,
+    setCookie,
+    setCookies,
+    languages,
+    setLanguage,
+    setLanguages,
+    contentType,
+    setContentType
 ) where
 
 import Hakit
