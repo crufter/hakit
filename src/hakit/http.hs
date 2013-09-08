@@ -276,7 +276,7 @@ docToCookies d = map f $ M.toList d
             k1,
             "=",
             docValToHeaderVal v1,
-            "; Max-Age=360000000; Version=1"
+            "; Max-Age=360000000; Version=1; Path=/"
             ]
 
 isCookieH h = fst h == "Cookie"
