@@ -35,6 +35,7 @@ import Hakit
 import qualified Data.List as L
 import qualified Data.Ord as O
 import qualified Data.Function as F
+import qualified Data.Map as M
 import qualified Data.Text.Encoding as TE
 import qualified Data.CaseInsensitive as CI
 import qualified Data.ByteString.Lazy as LBS
@@ -141,8 +142,8 @@ defaultConfig = Config 8080 False "c:/temp"
   Actual HTTP server gluing (using Warp).  
 --------------------------------------------------------------------}
 
-waiTohakit :: Wai.Request -> IO Req
-waiTohakit wr = do
+waiToHakit :: Wai.Request -> IO Req
+waiToHakit wr = do
     (paramList, files) <- Cond.runResourceT $ WP.parseRequestBody WP.tempFileBackEnd wr
     let getParams = interpretDoc $ Wai.queryString wr
         fileList = map (\(a, b) -> (a, WP.fileName b)) files
@@ -151,10 +152,8 @@ waiTohakit wr = do
         params = if verb == "GET"
             then getParams
             else postParams
-        reqHs = Wai.requestHeaders wr
-        -- cookies = cookiesFromHeaders reqHs
-        -- langs = langsFromHeaders reqHs
-    return $ Req verb (Wai.pathInfo wr) params []
+        reqHs = map (\(k, v) -> (TE.decodeUtf8 $ CI.original k, TE.decodeUtf8 v)) $ Wai.requestHeaders wr
+    return $ Req verb (Wai.pathInfo wr) params reqHs
 
 statusToInt :: HTypes.Status -> Integer
 statusToInt s = toInteger $ HTypes.statusCode s
@@ -170,9 +169,6 @@ hakitToWai fresp = do
         mimeType = Mime.mimeTypeOf $ contentType fr
         mimeHeader = ("Content-Type", TE.decodeUtf8 mimeType)
         waiHs = map (\(k, v) -> (CI.mk $ TE.encodeUtf8 k, TE.encodeUtf8 v)) (mimeHeader:headers)
-        -- storeMap = store fr
-        -- unstoreMap = M.fromList . map (\x -> (x, DocString "")) $ unstore fr
-        -- cookies = docToCookies $ M.union storeMap unstoreMap
     return $ Wai.responseLBS statusCode waiHs (body fr)
 
 -- | Start a HTTP server. Example:
@@ -183,7 +179,7 @@ startServer p reqHandler = do
     Warp.run p conv
     where
         conv a = do
-            a1 <- liftIO $ waiTohakit a
+            a1 <- liftIO $ waiToHakit a
             hakitToWai . liftIO $ reqHandler a1
 
 {--------------------------------------------------------------------
@@ -200,21 +196,30 @@ startServer p reqHandler = do
   - Headers.  
 --------------------------------------------------------------------}
 
+-- Sets or adds a tuple to a tuple list based on the first element
+-- of the tuple.
+setTuple :: Eq a => (a, b) -> [(a, b)] -> [(a, b)]
+setTuple (k, v) l =
+    let eqKey (key, value) = key == k
+        alreadyExists = length (filter eqKey l) > 0
+        modi (k', v') = if k' == k
+            then (k', v)
+            else (k', v')
+    in if alreadyExists
+        then map modi l
+        else (k, v):l
+
 -- | Replaces a headers' value having a key equal to the first argument
 -- with the second argument.
-replaceHeader :: Headery h => T.Text -> T.Text -> h -> h
-replaceHeader key val h = 
-    let modi hdr@(k, v) = if k == key
-            then hdr
-            else (k, val)
-        moddedHs = map modi $ headers h
+setHeader :: Headery h => T.Text -> T.Text -> h -> h
+setHeader key val h = 
+    let hs = headers h
+        moddedHs = setTuple (key, val) hs
     in setHeaders moddedHs h
 
+-- | Add header regardless if already present.
 addHeader :: Headery h => (T.Text, T.Text) -> h -> h
 addHeader hdr h = setHeaders (hdr:(headers h)) h
-
-c2w8 :: Char -> W.Word8
-c2w8 = fromIntegral . fromEnum
 
 {--------------------------------------------------------------------
   - Cookies.  
@@ -224,28 +229,33 @@ headersToDoc :: [HTypesHeader.Header] -> Document
 headersToDoc h = interpretDoc $ trans h where
     trans x = map (\(key, val) -> (CI.original key, Just val)) x
 
-docValToHeader v = case v of
-    DocString s     -> TE.encodeUtf8 s
-    DocInt i        -> TE.encodeUtf8 $ T.pack $ show i
-    DocFloat f      -> TE.encodeUtf8 $ T.pack $ show f
-    DocBool b       -> TE.encodeUtf8 $ T.pack $ show b
-    otherwise       -> error $ "can't convert to header: " ++ show v
+docValToHeaderVal v = case v of
+    DocString s     -> s
+    DocInt i        -> T.pack $ show i
+    DocFloat f      -> T.pack $ show f
+    DocBool b       -> T.pack $ show b
+    otherwise       -> error $ "Can't convert to header: " ++ show v
 
-docToHeaders :: Document -> [HTypesHeader.Header]
+docToHeaders :: Document -> [(T.Text, T.Text)]
 docToHeaders d = map f $ M.toList d
-    where f (k, v) = (CI.mk $ TE.encodeUtf8 k, docValToHeader v)
+    where f (k, v) = (k, docValToHeaderVal v)
 
 -- Set-Cookie: UserID=JohnDoe; Max-Age=3600; Version=1
-docToCookies :: Document -> [HTypesHeader.Header]
+docToCookies :: Document -> [(T.Text, T.Text)]
 docToCookies d = map f $ M.toList d
     where
-        f (k, v) = (CI.mk $ TE.encodeUtf8 "Set-Cookie", f1 k v)
-        f1 k1 v1 = BSC.concat [TE.encodeUtf8 $ T.concat [k1, "="], docValToHeader v1, "; Max-Age=360000000; Version=1"]
+        f (k, v) = ("Set-Cookie", f1 k v)
+        f1 k1 v1 = T.concat [
+            T.concat [k1, "="],
+            docValToHeaderVal v1,
+            "; Max-Age=360000000; Version=1"
+            ]
 
+isCookieH h = fst h == "Cookie"
 
-fromCookies :: [(T.Text, T.Text)] -> Document
-fromCookies hs =
-    let cookieHs = filter (\(k, v) -> k == "Cookie") hs
+cookiesToDoc :: [(T.Text, T.Text)] -> Document
+cookiesToDoc hs =
+    let cookieHs = filter isCookieH hs
         cookieKVs = filter (\x -> not $ T.isPrefixOf "$Version" x) . concat $ map (T.splitOn " " . snd) cookieHs
         cutSemicolon x = if T.isSuffixOf ";" x
             then T.init x
@@ -257,20 +267,29 @@ fromCookies hs =
         cookieKVPairs = map (splitToPair . cutSemicolon) cookieKVs
     in interpretDoc' cookieKVPairs
 
+-- | Returns the cookies as a Document.
 cookies :: Headery h => h -> Document
-cookies res = fromCookies $ headers res
+cookies res = cookiesToDoc $ headers res
 
--- setCookies :: Headery h => H.Document -> h -> h
--- setCookies doc res =
+-- | Sets a single cookie.
+setCookie :: Headery h => T.Text -> T.Text -> h -> h
+setCookie k v h = setCookies (dm [k .- v]) h
+
+-- | Sets cookies.
+setCookies :: Headery h => Document -> h -> h
+setCookies doc h =
+    let (chs, nchs) = L.partition isCookieH $ headers h
+        newDoc = M.union doc $ cookiesToDoc chs
+    in setHeaders (docToCookies newDoc ++ nchs) h
 
 {--------------------------------------------------------------------
   - Accept language.  
 --------------------------------------------------------------------}
 
--- | Sorts languages by their Qs
+-- | Unserializes and sorts languages by their Qs
 -- Expected format: da, en-gb;q=0.8, en;q=0.7
-languageQs :: T.Text -> [(T.Text, T.Text)] -- ("en", "0.7")
-languageQs hs =
+unserializeLanguages :: T.Text -> [(T.Text, T.Text)] -- ("en", "0.7")
+unserializeLanguages hs =
     let ls = map T.strip $ T.splitOn "," hs
         toTuples :: T.Text -> (T.Text, T.Text)
         toTuples l =
@@ -282,18 +301,37 @@ languageQs hs =
         pairs = map toTuples ls
     in L.sortBy (O.compare `F.on` snd) pairs
 
--- | Returns the language codes sorted by desirability.
-languages :: Headery h => h -> [T.Text]
-languages res =
+serializeLanguages :: [(T.Text, T.Text)] -> T.Text
+serializeLanguages ls =
+    let pairs (c, v) = T.intercalate ";q=" [c, v]
+    in T.intercalate ", " $ map pairs ls
+
+-- | Returns the language codes and their priority, ordered by their priority.
+languages' :: Headery h => h -> [(T.Text, T.Text)]
+languages' res =
     let lhs = filter (\(k, v) -> k == "Accept-Language") $ headers res
         lh = if length lhs == 0
             then ""
             else if length lhs == 1
                 then snd $ head lhs
                 else T.intercalate ", " $ map snd lhs
-    in map fst $ languageQs lh
+    in unserializeLanguages lh
 
--- addLanguage :: Headery h => (T.Text, Integer) -> h -> h
+-- | Returns the language codes ordered by their priority.
+languages :: Headery h => h -> [T.Text]
+languages h = map fst $ languages' h
+
+-- | Sets the given language with given priority.
+setLanguages :: Headery h => [(T.Text, T.Text)] -> h -> h
+setLanguages ls h =
+    let oldLs = M.fromList $ languages' h
+        newLs = M.fromList ls
+        merged = M.union newLs oldLs
+        seri = serializeLanguages $ M.toList merged
+    in setHeader "Accept-Language" seri h
+
+setLanguage :: Headery h => (T.Text, T.Text) -> h -> h
+setLanguage l h = setLanguages [l] h
 
 {--------------------------------------------------------------------
   - Content type.  
@@ -308,5 +346,5 @@ contentType h =
 
 -- | Sets the content type. Does recognize file extensions and uses
 -- the appropriate mime type instead.
--- setContentType :: Headery h => T.Text -> h -> h
--- setContentType t r = r{cType=t}
+setContentType :: Headery h => T.Text -> h -> h
+setContentType t h = setHeader "Content-Type" t h

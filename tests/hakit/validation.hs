@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings, ExtendedDefaultRules #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE ExtendedDefaultRules   #-}
+
 module Tests.Hakit.Validation where
 
 import Test.HUnit
