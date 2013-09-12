@@ -56,7 +56,12 @@ module Hakit (
     ma,
     -- * JSON support.
     fromJSON,
+    fromJSON',
     toJSON,
+    -- * Query String support
+    fromQueryString,
+    toQueryString,
+    toQueryString',
     -- * Other.
     nilDoc,
     e1,
@@ -80,6 +85,7 @@ import qualified Data.Ord as O
 import qualified Data.Map as M
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy.Encoding as TEL
+import qualified Network.HTTP.Types.URI as NU
 
 -- JSON functions
 import qualified Data.Aeson as J
@@ -112,61 +118,111 @@ data DocVal
     |   Nil
     deriving (Ord, Eq, Show)
 
+readDocVal :: String -> DocVal
+readDocVal str
+    iBool str = case (Safe.readMay str)::Maybe Bool of
+            Just b      -> Just b
+            Nothing     -> case str of
+                -- read for Bool does not recognize lowercase true and false.
+                "true"      -> Just True
+                "false"     -> Just False
+                otherwise   -> Nothing
+    in case (Safe.readMay str)::Maybe Integer of
+        Just i      -> d i
+        Nothing     -> case (Safe.readMay str):: Maybe Double of
+            Just dbl    -> d dbl
+            Nothing     -> case iBool str of
+                Just b      -> d b
+                Nothing     -> case iNil str of
+                    Just n  -> Nil
+                    Nothing -> d $ T.pack str
+
+instance Read DocVal where
+    read a = Just $ readDocVal a
+
 isInt a =       case a of
-    DocInt b -> True
-    otherwise -> False
+    DocInt b    -> True
+    otherwise   -> False
 
 toInt a =       case a of
-    DocInt b -> b
-    otherwise -> error $ show a ++ " is not an Integer."
+    DocInt b    -> b
+    otherwise   -> error $ show a ++ " is not an Integer."
+
+toInt' a = case a of
+    DocInt b    -> Just b
+    otherwise   -> Nothing
 
 isFloat a =     case a of
-    DocFloat b -> True
-    otherwise -> False
+    DocFloat b  -> True
+    otherwise   -> False
 
 toFloat a =     case a of
-    DocFloat b -> b
-    otherwise -> error $ show a ++ " is not a Float."
+    DocFloat b  -> b
+    otherwise   -> error $ show a ++ " is not a Float."
+
+toFloat' a =     case a of
+    DocFloat b  -> Just b
+    otherwise   -> Nothing
 
 isString a =    case a of
     DocString b -> True
-    otherwise -> False
+    otherwise   -> False
 
 toString a =    case a of
     DocString b -> b
-    otherwise -> error $ show a ++ " is not a String (Text)."
+    otherwise   -> error $ show a ++ " is not a String (Text)."
+
+toString' a =    case a of
+    DocString b -> Just b
+    otherwise   -> Nothing
 
 isBool a =      case a of
-    DocBool b -> True
-    otherwise -> False
+    DocBool b   -> True
+    otherwise   -> False
 
 toBool a =      case a of
-    DocBool b -> b
-    otherwise -> error $ show a ++ " is not a Bool."
+    DocBool b   -> b
+    otherwise   -> error $ show a ++ " is not a Bool."
+
+toBool' a =      case a of
+    DocBool b   -> Just b
+    otherwise   -> Nothing
 
 isMap a =       case a of
-    DocMap b -> True
-    otherwise -> False
+    DocMap b    -> True
+    otherwise   -> False
 
 toMap a =       case a of
-    DocMap b -> b
-    otherwise -> error $ show a ++ " is not a Map."
+    DocMap b    -> b
+    otherwise   -> error $ show a ++ " is not a Map."
+
+toMap' a =       case a of
+    DocMap b    -> Just b
+    otherwise   -> Nothing
 
 isList a =      case a of
-    DocList b -> True
-    otherwise -> False
+    DocList b   -> True
+    otherwise   -> False
 
 toList a =      case a of
-    DocList b -> b
-    otherwise -> error $ show a ++ " is not a List."
+    DocList b   -> b
+    otherwise   -> error $ show a ++ " is not a List."
+
+toList' a =      case a of
+    DocList b   -> Just b
+    otherwise   -> Nothing
 
 isNil a =       case a of
-    Nil -> True
-    otherwise -> False
+    Nil         -> True
+    otherwise   -> False
 
 toNil a =       case a of
-    Nil -> Nil
-    otherwise -> error $ show a ++ " is not a Nil."
+    Nil         -> Nil
+    otherwise   -> error $ show a ++ " is not a Nil."
+
+toNil' a =       case a of
+    Nil         -> Just Nil
+    otherwise   -> Nothing
 
 len a = case a of
     DocString s -> T.length s
@@ -177,6 +233,14 @@ len a = case a of
 -- "DocValCompatible" class for types which know how to convert themself to a DocVal.
 class (Show a, Eq a) => DocValComp a where
 	toDocVal :: a -> DocVal
+
+-- | Identical to show, except it serializes strings (text)
+-- without quotes.
+showWithoutQuotes :: DocVal -> T.Text
+showWithoutQuotes dv =
+    case dv of
+        DocString t -> t
+        otherwise   -> show dv
 
 instance DocValComp Integer where
 	toDocVal = DocInt
@@ -520,6 +584,23 @@ toJSON d =
     in TE.decodeUtf8 . LBS.toStrict $ J.encode jObj
 
 {--------------------------------------------------------------------
+  Query string support.  
+--------------------------------------------------------------------}
+
+-- | Can't write it by hand, serializaton needs URL escaping.
+toQueryString :: Document -> T.Text
+toQueryString doc =
+    let ls = map (\(a, b) -> (a, showWithoutQuotes b)) $  M.toList doc
+        lsPairs = map (\(a, b) -> T.intercalate "=" [a, b])
+    in T.intercalate 
+
+fromQueryString :: T.Text -> Document
+
+fromQueryString' :: T.Text -> Maybe Document
+
+frmQueryString'' :: T.Text -> (Document, Bool)
+
+{--------------------------------------------------------------------
   Other.  
 --------------------------------------------------------------------}
 
@@ -553,35 +634,22 @@ instance Show Location where
                             else x
                 in T.unpack . T.intercalate "/" $ map f a
 
--- | Creates a Document out of a list of key value pairs.
--- Tries to read bools, nils, floats, ints, and creates lists out of duplicate elements.
--- Maps are not supported yet.
-interpretDoc :: [(BS.ByteString, Maybe BS.ByteString)] -> Document
-interpretDoc q = M.fromList $ map singlify (gr (map f q)) where
-    singlify (key, docValList) = if length docValList > 1
-        then (key, DocList docValList)
-        else (key, Safe.atNote "docList is empty" docValList 0)
-    f (key, val) = case val of
-        Nothing -> (T.pack $ BSC.unpack key, Nil)
-        Just bs -> (T.pack $ BSC.unpack key, interpret bs)
-    iBool str = case (Safe.readMay str)::Maybe Bool of
-        Just b      -> Just b
-        Nothing     -> case str of
-            "true"      -> Just True
-            "false"     -> Just False
-            otherwise   -> Nothing
-    iNil str = if str == "nil" || str == "Nil" then Just Nil else Nothing
-    interpret bs =
-        let str = T.unpack $ TE.decodeUtf8 bs in
-            case (Safe.readMay str)::Maybe Integer of
-                Just i      -> d i
-                Nothing     -> case (Safe.readMay str):: Maybe Double of
-                    Just dbl    -> d dbl
-                    Nothing     -> case iBool str of
-                        Just b      -> d b
-                        Nothing     -> case iNil str of
-                            Just n  -> Nil
-                            Nothing -> d $ T.pack str
+-- Reads a DocVal from text. Does not strip quotes from string data.
+-- TODO: What about binary data? (In general.)
+readText :: T.Text -> DocVal
+readText t = let str = T.unpack t bs in readDocVal str
 
-interpretDoc' :: [(T.Text, T.Text)] -> Document
-interpretDoc' q = interpretDoc $ map (\(a, b) -> (TE.encodeUtf8 a, Just $ TE.encodeUtf8 b)) q
+-- | 
+readFromList :: [(T.Text, T.Text)] -> Document
+readFromList xs = fromList $ map (\(a, b) -> (a, readText b)) xs
+
+-- | Creates a Document out of a list of key value pairs.
+-- Creates lists out of elements with the same keys.
+-- Maps are not supported yet. (In theory we could, recognizing dot notation in keys.)
+fromList :: [(T.Text, DocVal)] -> Document
+fromList vs =
+    let grouped = gr vs
+        singlify (key, docValList) = if length docValList > 1
+            then (key, DocList docValList)
+            else (key, Safe.atNote "docList is empty" docValList 0)
+    in M.fromList $ map singlify grouped

@@ -95,7 +95,7 @@ class Db db where
     -- Authentication happens against a database, so a database must be specified.
     connect     :: DocComp d => db -> d -> IO db
     -- TODO: auth function.
-    -- | List of servers addresses the given db handle is connected to.
+    -- | List of server addresses the given db handle is connected to.
     servers     :: db -> [T.Text]
     -- | Get location.
     location    :: db -> Document

@@ -31,3 +31,6 @@ ex4 p = do
 					["delCookie"]		-> 	setBody "Cookie unset" $ setCookie "Hello" "" resp
 			return r
 	startServer p handler
+
+-- For testing POST.
+ex5 p = startServer p $ \req -> return $ setBody (toJSON $ params req) resp

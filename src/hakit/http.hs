@@ -20,6 +20,8 @@ module Hakit.Http (
     setPath,
     params,
     setParams,
+    domain,
+    setDomain,
     Resp,
     resp,
     status,
@@ -65,6 +67,8 @@ import qualified Data.Conduit as Cond
 import qualified Data.Map as M
 import qualified Data.Word as W
 import qualified Hakit.Mime as Mime
+-- HTTP client:
+import qualified Network.HTTP as HC
 import Control.Monad.IO.Class (liftIO)
 
 {--------------------------------------------------------------------
@@ -73,6 +77,7 @@ import Control.Monad.IO.Class (liftIO)
 
 data Req = Req {
     metho       :: T.Text,              -- | HTTP method (eg. GET, POST etc)
+    domai       :: T.Text,              -- | Domain.
     pat         :: [T.Text],            -- | Request path split by forward dashes.
     param       :: Document,            -- | Query params.
     reqHeaders  :: [(T.Text, T.Text)]   -- | Headers.
@@ -80,7 +85,7 @@ data Req = Req {
 
 -- | An empty request. See resp for more info.
 req :: Req
-req = Req "GET" [] nilDoc []
+req = Req "GET" "" [] nilDoc []
 
 method :: Req -> T.Text
 method = metho
@@ -99,6 +104,12 @@ params = param
 
 setParams :: Document -> Req -> Req
 setParams d r = r{param=d}
+
+domain :: Req -> T.Text
+domain = domai
+
+setDomain :: T.Text -> Req -> Req
+setDomain v r = r{domai=v}
 
 -- | Response.
 data Resp = Resp {
@@ -244,7 +255,7 @@ setHeader key val h =
         moddedHs = setTuple (key, val) hs
     in setHeaders moddedHs h
 
--- | Add header regardless if already present.
+-- | Add header regardless if the key is already present.
 addHeader :: Headery h => (T.Text, T.Text) -> h -> h
 addHeader hdr h = setHeaders (hdr:(headers h)) h
 
@@ -303,7 +314,8 @@ cookies res = cookiesToDoc $ headers res
 setCookie :: Headery h => T.Text -> T.Text -> h -> h
 setCookie k v h = setCookies (dm [k .- v]) h
 
--- | Sets cookies.
+-- | Adds cookies, does not replace the already
+-- existing ones.
 setCookies :: Headery h => Document -> h -> h
 setCookies doc h =
     let (chs, nchs) = L.partition isCookieH $ headers h
