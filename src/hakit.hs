@@ -141,12 +141,9 @@ readDocVal str =
             Just dbl    -> d dbl
             Nothing     -> case iBool str of
                 Just b      -> d b
-                Nothing     -> case iNil str of
+                Nothing     -> case isNil str of
                     Just n  -> Nil
                     Nothing -> d $ T.pack str
-
-instance Read DocVal where
-    read a = Just $ readDocVal a
 
 isInt a =       case a of
     DocInt b    -> True
@@ -232,13 +229,18 @@ toNil' a =       case a of
     Nil         -> Just Nil
     otherwise   -> Nothing
 
+-- TODO: implement isDTyped
+toDTyped a = case a of
+    DTyped v    -> v
+    otherwise   -> error $ show a ++ " is not a DTyped value." 
+
 len a = case a of
     DocString s -> T.length s
     DocList l   -> length l
     DocMap m    -> M.size m
     otherwise   -> error $ "len applied on incompatible DocVal: " ++ show a
 
---| Typelass for types which know how to convert to and from a DocVal.
+-- | Typelass for types which know how to convert to and from a DocVal.
 class (Show a, Eq a) => DocValLike a where
     toDocVal   :: a -> DocVal
     fromDocVal :: DocVal -> a
@@ -252,12 +254,12 @@ showWithoutQuotes dv =
         otherwise   -> show dv
 
 instance DocValLike Integer where
-    toDocVal   = DocInt
-    romDocVal = toInt
+    toDocVal    = DocInt
+    fromDocVal   = toInt
 
 instance DocValLike Double where
-    toDocVal   = DocFloat
-    fromDocVal = toFloat
+    toDocVal    = DocFloat
+    fromDocVal  = toFloat
 
 instance DocValLike String where
     toDocVal    = DocString . T.pack
@@ -544,7 +546,7 @@ instance DocLike Document where
 --instance DocValLike dc => DocComp (M.Map T.Text dc) where
 --    toDoc v = dm . map (\(k, val) -> (k, toDocVal val)) $ M.toList v
 
-dm :: DocComp d => d -> Document
+dm :: DocLike d => d -> Document
 dm x = toDoc x
 
 {--------------------------------------------------------------------
@@ -637,7 +639,7 @@ gr = map (\l -> (fst . head $ l, map snd l)) . List.groupBy ((==) `F.on` fst) . 
 -- Reads a DocVal from text. Does not strip quotes from string data.
 -- TODO: What about binary data? (In general.)
 readText :: T.Text -> DocVal
-readText t = let str = T.unpack t bs in readDocVal str
+readText t = readDocVal $ T.unpack t
 
 -- | Same as fromList, but reads the DocVals from Texts.
 readFromList :: [(T.Text, T.Text)] -> Document
