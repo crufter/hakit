@@ -93,39 +93,39 @@ class Db db where
     -- In the input document d, if you specify "user" and "password" fields, it will try to authenticate the connection.
     -- Exception will be thrown if the authentication is tried but fails.
     -- Authentication happens against a database, so a database must be specified.
-    connect     :: DocComp d => db -> d -> IO db
+    connect     :: DocLike d => db -> d -> IO db
     -- TODO: auth function.
     -- | List of server addresses the given db handle is connected to.
     servers     :: db -> [T.Text]
     -- | Get location.
     location    :: db -> Document
     -- | Sets default location.
-    setLocation :: DocComp d => db -> d -> db
+    setLocation :: DocLike d => db -> d -> db
     -- | Drop a database.
-    dropDb      :: DocComp d => db -> d -> IO ()
+    dropDb      :: DocLike d => db -> d -> IO ()
     -- Drop the current database.
     dropCurrent :: db -> IO ()
     -- Insert a document. Returned string is the Id of the freshly inserted document. If a document already has an "id" field, that will be used.
-    insert      :: DocComp d => db -> d -> IO T.Text
+    insert      :: DocLike d => db -> d -> IO T.Text
     -- Insert multiple documents at once, return their Ids.
-    insertAll   :: DocComp d => db -> [d] -> IO [T.Text]
+    insertAll   :: DocLike d => db -> [d] -> IO [T.Text]
     -- Find all documents in selection.
-    find        :: DocComp s => db -> s -> IO [Document]
+    find        :: DocLike s => db -> s -> IO [Document]
     -- Find the first document in selection.
-    findOne     :: DocComp s => db -> s -> IO (Maybe Document)
+    findOne     :: DocLike s => db -> s -> IO (Maybe Document)
     -- Update (modify) the document in selection.
-    update      :: (DocComp s, DocComp mod) => db -> s -> mod -> IO ()
+    update      :: (DocLike s, DocLike mod) => db -> s -> mod -> IO ()
     -- Count the documents in selection.
-    count       :: DocComp s => db -> s -> IO Integer
+    count       :: DocLike s => db -> s -> IO Integer
     -- Delete all documents in selection.
-    delete      :: DocComp s => db -> s -> IO ()
+    delete      :: DocLike s => db -> s -> IO ()
     -- Delete first document in selection.
-    deleteOne   :: DocComp s => db -> s -> IO ()
+    deleteOne   :: DocLike s => db -> s -> IO ()
     -- Replace first document in selection with given document.
-    replace     :: DocComp s => db -> s -> Document -> IO ()
+    replace     :: DocLike s => db -> s -> Document -> IO ()
     -- Iterate over documents in selection. Useful for batch processing.
-    iterate     :: DocComp s => db -> s -> (Document -> IO ()) -> IO ()
-    -- Maybe add something like iterateBatch :: DocComp s => db -> s ([Document] -> IO ()) -> IO ()
+    iterate     :: DocLike s => db -> s -> (Document -> IO ()) -> IO ()
+    -- Maybe add something like iterateBatch :: DocLike s => db -> s ([Document] -> IO ()) -> IO ()
     -- Resolve all dbRefs in given set of documents.
     resolve     :: db -> [Document] -> IO [Document]
     resolve db docs = resolveDbRefs db docs
@@ -190,7 +190,7 @@ idType      = "id"
 regexpType  = "regexp"
 idLen       = 24
 
-dbRef :: DocComp dc => dc -> DocVal
+dbRef :: DocLike dc => dc -> DocVal
 dbRef doc = DocTyped $ DTyped "dbRef" (d (toDoc doc))
 
 unpackDbRef :: DTyped -> Document
