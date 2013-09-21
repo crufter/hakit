@@ -85,7 +85,7 @@ floater key dat rule = do
         else Right dat
 
 -- Automatically converts anything to a string if that is not a string.
--- It is inconsistent with the other builtins, because they don't attempt convert, however, it is consistent with Frame, which tries to parse every string
+-- It is inconsistent with the other builtins, because they don't attempt convert, however, it is consistent with Hakit, which tries to parse every string
 -- into an Integer, Double, Bool, Nil in queryToDoc.
 stringer :: Validator
 stringer key dat rule = do
@@ -147,7 +147,7 @@ toListOpts d =
 -- | Safe version of validate.
 validateSafe :: Document -> Document -> Either String Document
 validateSafe rules doc =
-    CM.liftM dm $ sequence $ map fromJust $ filter isJust $ map (\r@(key, rule) ->
+    CM.liftM dm . sequence . map fromJust . filter isJust $ map (\r@(key, rule) ->
         let subject = get key doc
             toPair :: a -> b -> (a, b)
             toPair key x = (key, x)

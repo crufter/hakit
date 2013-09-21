@@ -15,8 +15,8 @@ module Hakit (
     DList,
     DTyped(..),
     DocVal(..),
-    DocValComp(..),
-    DocComp(..),
+    DocValLike(..),
+    DocLike(..),
     -- * Convenience functions.
     isInt,
     toInt,
@@ -56,20 +56,26 @@ module Hakit (
     ma,
     -- * JSON support.
     fromJSON,
+    fromJSON',
     toJSON,
+    -- * Query String support
+    fromQueryString,
+    toQueryString,
     -- * Other.
+    showWithoutQuotes,
+    fromBSKV,
+    toBSKV,
+    readFromList,
     nilDoc,
     e1,
     e2,
     e3,
-    gr,
-    Location(..),
-    interpretDoc,
-    interpretDoc'
+    gr
 ) where
 
 import qualified Data.List as List
 import qualified Data.List.Split as Spl
+import qualified GHC.Float as GF
 import qualified Safe
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString as BS
@@ -80,6 +86,7 @@ import qualified Data.Ord as O
 import qualified Data.Map as M
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy.Encoding as TEL
+import qualified Network.HTTP.Types as HT
 
 -- JSON functions
 import qualified Data.Aeson as J
@@ -112,61 +119,122 @@ data DocVal
     |   Nil
     deriving (Ord, Eq, Show)
 
+-- | Reads a DocVal from a string.
+--
+-- > readDocVal "Whatever"    == DocString "Whatever"
+-- > readDocVal "False"       == DocBool False
+-- > readDocVal "1"           == DocInt 1
+-- > readDocVal "0.2"         == DocFloat 0.2
+-- > readDocVal "Nil"         == Nil
+readDocVal :: String -> DocVal
+readDocVal str =
+    let iBool str = case (Safe.readMay str)::Maybe Bool of
+            Just b      -> Just b
+            Nothing     -> case str of
+                -- read for Bool does not recognize lowercase true and false.
+                "true"      -> Just True
+                "false"     -> Just False
+                otherwise   -> Nothing
+        iNil str = str == "nil" || str == "Nil"
+                    || str == "null" || str == "Null"
+    in case (Safe.readMay str)::Maybe Integer of
+        Just i      -> d i
+        Nothing     -> case (Safe.readMay str):: Maybe Double of
+            Just dbl    -> d dbl
+            Nothing     -> case iBool str of
+                Just b      -> d b
+                Nothing     -> if iNil str
+                    then Nil
+                    else d $ T.pack str
+
 isInt a =       case a of
-    DocInt b -> True
-    otherwise -> False
+    DocInt b    -> True
+    otherwise   -> False
 
 toInt a =       case a of
-    DocInt b -> b
-    otherwise -> error $ show a ++ " is not an Integer."
+    DocInt b    -> b
+    otherwise   -> error $ show a ++ " is not an Integer."
+
+toInt' a = case a of
+    DocInt b    -> Just b
+    otherwise   -> Nothing
 
 isFloat a =     case a of
-    DocFloat b -> True
-    otherwise -> False
+    DocFloat b  -> True
+    otherwise   -> False
 
 toFloat a =     case a of
-    DocFloat b -> b
-    otherwise -> error $ show a ++ " is not a Float."
+    DocFloat b  -> b
+    otherwise   -> error $ show a ++ " is not a Float."
+
+toFloat' a =     case a of
+    DocFloat b  -> Just b
+    otherwise   -> Nothing
 
 isString a =    case a of
     DocString b -> True
-    otherwise -> False
+    otherwise   -> False
 
 toString a =    case a of
     DocString b -> b
-    otherwise -> error $ show a ++ " is not a String (Text)."
+    otherwise   -> error $ show a ++ " is not a String (Text)."
+
+toString' a =    case a of
+    DocString b -> Just b
+    otherwise   -> Nothing
 
 isBool a =      case a of
-    DocBool b -> True
-    otherwise -> False
+    DocBool b   -> True
+    otherwise   -> False
 
 toBool a =      case a of
-    DocBool b -> b
-    otherwise -> error $ show a ++ " is not a Bool."
+    DocBool b   -> b
+    otherwise   -> error $ show a ++ " is not a Bool."
+
+toBool' a =      case a of
+    DocBool b   -> Just b
+    otherwise   -> Nothing
 
 isMap a =       case a of
-    DocMap b -> True
-    otherwise -> False
+    DocMap b    -> True
+    otherwise   -> False
 
 toMap a =       case a of
-    DocMap b -> b
-    otherwise -> error $ show a ++ " is not a Map."
+    DocMap b    -> b
+    otherwise   -> error $ show a ++ " is not a Map."
+
+toMap' a =       case a of
+    DocMap b    -> Just b
+    otherwise   -> Nothing
 
 isList a =      case a of
-    DocList b -> True
-    otherwise -> False
+    DocList b   -> True
+    otherwise   -> False
 
 toList a =      case a of
-    DocList b -> b
-    otherwise -> error $ show a ++ " is not a List."
+    DocList b   -> b
+    otherwise   -> error $ show a ++ " is not a List."
+
+toList' a =      case a of
+    DocList b   -> Just b
+    otherwise   -> Nothing
 
 isNil a =       case a of
-    Nil -> True
-    otherwise -> False
+    Nil         -> True
+    otherwise   -> False
 
 toNil a =       case a of
-    Nil -> Nil
-    otherwise -> error $ show a ++ " is not a Nil."
+    Nil         -> Nil
+    otherwise   -> error $ show a ++ " is not a Nil."
+
+toNil' a =       case a of
+    Nil         -> Just Nil
+    otherwise   -> Nothing
+
+-- TODO: implement isDTyped
+toDTyped a = case a of
+    DocTyped d  -> d 
+    otherwise   -> error $ show a ++ " is not a DTyped value." 
 
 len a = case a of
     DocString s -> T.length s
@@ -174,54 +242,73 @@ len a = case a of
     DocMap m    -> M.size m
     otherwise   -> error $ "len applied on incompatible DocVal: " ++ show a
 
--- "DocValCompatible" class for types which know how to convert themself to a DocVal.
-class (Show a, Eq a) => DocValComp a where
-	toDocVal :: a -> DocVal
+-- | Typelass for types which know how to convert to and from a DocVal.
+class (Show a, Eq a) => DocValLike a where
+    toDocVal   :: a -> DocVal
+    fromDocVal :: DocVal -> a
 
-instance DocValComp Integer where
-	toDocVal = DocInt
+-- | Identical to show, except it serializes strings (text)
+-- without quotes.
+showWithoutQuotes :: DocVal -> T.Text
+showWithoutQuotes dv =
+    case dv of
+        DocString t -> t
+        otherwise   -> T.pack $ show dv
 
-instance DocValComp Double where
-	toDocVal = DocFloat
+instance DocValLike Integer where
+    toDocVal    = DocInt
+    fromDocVal   = toInt
 
-instance DocValComp String where
-    toDocVal = DocString . T.pack
+instance DocValLike Double where
+    toDocVal    = DocFloat
+    fromDocVal  = toFloat
 
-instance DocValComp Bool where
-    toDocVal = DocBool
+instance DocValLike String where
+    toDocVal    = DocString . T.pack
+    fromDocVal  = T.unpack . toString
 
-instance DocValComp Document where
-    toDocVal = DocMap
+instance DocValLike Bool where
+    toDocVal    = DocBool
+    fromDocVal  = toBool
 
-instance DocValComp DList where
-    toDocVal = DocList
+instance DocValLike Document where
+    toDocVal    = DocMap
+    fromDocVal  = toMap
 
-instance DocValComp DTyped where
-    toDocVal = DocTyped
+instance DocValLike DList where
+    toDocVal    = DocList
+    fromDocVal  = toList
 
-instance DocValComp DocVal where
-    toDocVal = id
+instance DocValLike DTyped where
+    toDocVal    = DocTyped
+    fromDocVal  = toDTyped
 
-instance DocValComp T.Text where
-    toDocVal = DocString
+instance DocValLike DocVal where
+    toDocVal    = id
+    fromDocVal  = id
 
-instance DocValComp [(T.Text, DocVal)] where
+instance DocValLike T.Text where
+    toDocVal    = DocString
+    fromDocVal  = toString
+
+instance DocValLike [(T.Text, DocVal)] where
     toDocVal = DocMap . M.fromList
+    fromDocVal = M.toList . toMap
 
--- instance DocValComp a => DocValComp [a] where
+-- instance DocValLike a => DocValLike [a] where
 --     toDocVal l = DocList $ map toDocVal l
 
 -- | Converts a compatible type into a DocVal.
-d :: DocValComp a => a -> DocVal
+d :: DocValLike a => a -> DocVal
 d a = toDocVal a
 
 -- | Shorthand to create a DocTyped value.
-dt :: DocValComp a => T.Text -> a -> DocVal
+dt :: DocValLike a => T.Text -> a -> DocVal
 dt typ val = DocTyped $ DTyped typ $ toDocVal val
 
 infix 0 .-
 -- | Helps to easily create a document (compatible type), like ["name" .- "Joey"]
-(.-) :: DocValComp b => T.Text -> b -> (T.Text, DocVal)
+(.-) :: DocValLike b => T.Text -> b -> (T.Text, DocVal)
 (.-) a b = (a, toDocVal b)
 
 isLeft :: Either a b -> Bool
@@ -328,7 +415,7 @@ exists path doc = snd $ getRec path doc
 -- Supports the same dot notation as get.
 -- If the path is nonexistent, it will create the maps along the way, but will not grow any lists.
 -- If the path already exists, it will replace the element.
-set :: DocValComp d => T.Text -> d -> Document -> Document
+set :: DocValLike d => T.Text -> d -> Document -> Document
 set key val doc = fst $ set' key val doc
 
 isAccInt x = case x of
@@ -337,7 +424,7 @@ isAccInt x = case x of
 
 -- Returns the possibly updated Document and a Bool indicating wether
 -- the document has been changed.
-set' :: DocValComp d => T.Text -> d -> Document -> (Document, Bool)
+set' :: DocValLike d => T.Text -> d -> Document -> (Document, Bool)
 set' key val doc = (toMap a, b)
     where
     accElems = parseAccElems key
@@ -445,20 +532,23 @@ nilDoc = M.empty
 
 size a = M.size a
 
--- | A typeclass for types convertible to a Document.
-class DocComp a where
-    toDoc :: a -> Document
+-- | A typeclass for types convertible to and from Document.
+class DocLike a where
+    toDoc   :: a -> Document
+    fromDoc :: Document -> a 
 
-instance DocComp [(T.Text, DocVal)] where
+instance DocLike [(T.Text, DocVal)] where
     toDoc = M.fromList
+    fromDoc = M.toList
 
-instance DocComp Document where
+instance DocLike Document where
     toDoc = id
+    fromDoc = id
 
---instance DocValComp dc => DocComp (M.Map T.Text dc) where
+--instance DocValLike dc => DocComp (M.Map T.Text dc) where
 --    toDoc v = dm . map (\(k, val) -> (k, toDocVal val)) $ M.toList v
 
-dm :: DocComp d => d -> Document
+dm :: DocLike d => d -> Document
 dm x = toDoc x
 
 {--------------------------------------------------------------------
@@ -520,6 +610,29 @@ toJSON d =
     in TE.decodeUtf8 . LBS.toStrict $ J.encode jObj
 
 {--------------------------------------------------------------------
+  Query string support.  
+--------------------------------------------------------------------}
+
+fromBSKV :: [(BS.ByteString, Maybe BS.ByteString)] -> [(T.Text, T.Text)]
+fromBSKV xs = map (\(a, b) -> (TE.decodeUtf8 a, f b)) xs
+    where
+    f x = case x of
+        Nothing -> ""
+        Just a  -> TE.decodeUtf8 a
+
+toBSKV :: [(T.Text, T.Text)] -> [(BS.ByteString, Maybe BS.ByteString)]
+toBSKV xs = map (\(a, b) -> (TE.encodeUtf8 a, Just $ TE.encodeUtf8 b)) xs
+
+-- | Can't write it by hand, serializaton needs URL escaping.
+toQueryString :: Document -> T.Text
+toQueryString doc =
+    let ls = map (\(a, b) -> (a, showWithoutQuotes b)) $  M.toList doc
+    in TE.decodeUtf8 . HT.renderQuery False $ toBSKV ls
+
+fromQueryString :: T.Text -> Document
+fromQueryString t = readFromList . fromBSKV . HT.parseQuery $ TE.encodeUtf8 t
+
+{--------------------------------------------------------------------
   Other.  
 --------------------------------------------------------------------}
 
@@ -531,57 +644,22 @@ e3 (_,_,a) = a
 gr :: (Eq a, Ord a) => [(a, b)] -> [(a, [b])]
 gr = map (\l -> (fst . head $ l, map snd l)) . List.groupBy ((==) `F.on` fst) . List.sortBy (O.comparing fst)
 
--- | A location is essentially a link, but with a structure.
--- ["cars", "#id"], fromList [("id", "4998a9a8sa8sa8s81")]
-data Location = Location [T.Text] Document
+-- Reads a DocVal from text. Does not strip quotes from string data.
+-- TODO: What about binary data? (In general.)
+readText :: T.Text -> DocVal
+readText t = readDocVal $ T.unpack t
 
-instance Show Location where
-    show (Location a b) =
-        "/" ++ case a of
-            []      -> ""
-            (y:ys)  ->
-                let f x = if T.length x == 0
-                        then ""
-                        else if T.head x == '#'
-                            then case M.lookup (T.tail x) b of
-                                Just docv   -> case docv of
-                                    DocString s     -> s
-                                    DocFloat f      -> T.pack $ show f
-                                    DocInt i        -> T.pack $ show i
-                                    otherwise       -> T.pack $ show docv
-                                Nothing     -> error $ "Can't find element: " ++ show x
-                            else x
-                in T.unpack . T.intercalate "/" $ map f a
+-- | Same as fromList, but reads the DocVals from Texts.
+readFromList :: [(T.Text, T.Text)] -> Document
+readFromList xs = fromList $ map (\(a, b) -> (a, readText b)) xs
 
 -- | Creates a Document out of a list of key value pairs.
--- Tries to read bools, nils, floats, ints, and creates lists out of duplicate elements.
--- Maps are not supported yet.
-interpretDoc :: [(BS.ByteString, Maybe BS.ByteString)] -> Document
-interpretDoc q = M.fromList $ map singlify (gr (map f q)) where
-    singlify (key, docValList) = if length docValList > 1
-        then (key, DocList docValList)
-        else (key, Safe.atNote "docList is empty" docValList 0)
-    f (key, val) = case val of
-        Nothing -> (T.pack $ BSC.unpack key, Nil)
-        Just bs -> (T.pack $ BSC.unpack key, interpret bs)
-    iBool str = case (Safe.readMay str)::Maybe Bool of
-        Just b      -> Just b
-        Nothing     -> case str of
-            "true"      -> Just True
-            "false"     -> Just False
-            otherwise   -> Nothing
-    iNil str = if str == "nil" || str == "Nil" then Just Nil else Nothing
-    interpret bs =
-        let str = T.unpack $ TE.decodeUtf8 bs in
-            case (Safe.readMay str)::Maybe Integer of
-                Just i      -> d i
-                Nothing     -> case (Safe.readMay str):: Maybe Double of
-                    Just dbl    -> d dbl
-                    Nothing     -> case iBool str of
-                        Just b      -> d b
-                        Nothing     -> case iNil str of
-                            Just n  -> Nil
-                            Nothing -> d $ T.pack str
-
-interpretDoc' :: [(T.Text, T.Text)] -> Document
-interpretDoc' q = interpretDoc $ map (\(a, b) -> (TE.encodeUtf8 a, Just $ TE.encodeUtf8 b)) q
+-- Creates lists out of elements with the same keys.
+-- Maps are not supported yet. (In theory we could, recognizing dot notation in keys.)
+fromList :: [(T.Text, DocVal)] -> Document
+fromList vs =
+    let grouped = gr vs
+        singlify (key, docValList) = if length docValList > 1
+            then (key, DocList docValList)
+            else (key, Safe.atNote "docList is empty" docValList 0)
+    in M.fromList $ map singlify grouped
