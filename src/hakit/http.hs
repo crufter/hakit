@@ -180,18 +180,20 @@ defaultConfig = Config 8080 False "c:/temp"
   Actual HTTP server gluing (using Warp).  
 --------------------------------------------------------------------}
 
+fromCI xs = map (\(k, v) -> (TE.decodeUtf8 $ CI.original k, TE.decodeUtf8 v)) xs
+
 waiToHakit :: Wai.Request -> IO Req
 waiToHakit wr = do
     (paramList, files) <- Cond.runResourceT $ WP.parseRequestBody WP.tempFileBackEnd wr
-    let getParams = interpretDoc $ Wai.queryString wr
+    let getParams = readFromList . fromBSKV $ Wai.queryString wr
         fileList = map (\(a, b) -> (a, WP.fileName b)) files
-        postParams = interpretDoc . map (\(a, b) -> (a, Just b)) $ paramList ++ fileList
+        postParams = readFromList . fromBSKV . map (\(a, b) -> (a, Just b)) $ paramList ++ fileList
         verb = TE.decodeUtf8 $ Wai.requestMethod wr
         params = if verb == "GET"
             then getParams
             else postParams
-        reqHs = map (\(k, v) -> (TE.decodeUtf8 $ CI.original k, TE.decodeUtf8 v)) $ Wai.requestHeaders wr
-    return $ Req verb (Wai.pathInfo wr) params reqHs
+        reqHs = fromCI $ Wai.requestHeaders wr
+    return $ Req verb (TE.decodeUtf8 $ Wai.serverName wr) (Wai.pathInfo wr) params reqHs
 
 statusToInt :: HTypes.Status -> Integer
 statusToInt s = toInteger $ HTypes.statusCode s
@@ -264,8 +266,8 @@ addHeader hdr h = setHeaders (hdr:(headers h)) h
 --------------------------------------------------------------------}
 
 headersToDoc :: [HTypesHeader.Header] -> Document
-headersToDoc h = interpretDoc $ trans h where
-    trans x = map (\(key, val) -> (CI.original key, Just val)) x
+headersToDoc h = readFromList $ trans h where
+    trans x = map (\(key, val) -> (TE.decodeUtf8 $ CI.original key, TE.decodeUtf8 val)) x
 
 docValToHeaderVal v = case v of
     DocString s     -> s
@@ -304,7 +306,7 @@ cookiesToDoc hs =
                 then error $ "malformed cookie header: " ++ show x
                 else (s!!0, s!!1)
         cookieKVPairs = map (splitToPair . cutSemicolon) cookieKVs
-    in interpretDoc' cookieKVPairs
+    in readFromList cookieKVPairs
 
 -- | Returns the cookies as a Document.
 cookies :: Headery h => h -> Document
