@@ -16,7 +16,7 @@ module Hakit (
     DTyped(..),
     DocVal(..),
     DocValLike(..),
-    DocComp(..),
+    DocLike(..),
     -- * Convenience functions.
     isInt,
     toInt,
@@ -61,16 +61,12 @@ module Hakit (
     -- * Query String support
     fromQueryString,
     toQueryString,
-    toQueryString',
     -- * Other.
     nilDoc,
     e1,
     e2,
     e3,
-    gr,
-    Location(..),
-    interpretDoc,
-    interpretDoc'
+    gr
 ) where
 
 import qualified Data.List as List
@@ -86,7 +82,7 @@ import qualified Data.Ord as O
 import qualified Data.Map as M
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy.Encoding as TEL
-import qualified Network.HTTP.Types.URI as NU
+import qualified Network.HTTP.Types as HT
 
 -- JSON functions
 import qualified Data.Aeson as J
@@ -135,15 +131,17 @@ readDocVal str =
                 "true"      -> Just True
                 "false"     -> Just False
                 otherwise   -> Nothing
+        iNil str = str == "nil" || str == "Nil"
+                    || str == "null" || str == "Null"
     in case (Safe.readMay str)::Maybe Integer of
         Just i      -> d i
         Nothing     -> case (Safe.readMay str):: Maybe Double of
             Just dbl    -> d dbl
             Nothing     -> case iBool str of
                 Just b      -> d b
-                Nothing     -> case isNil str of
-                    Just n  -> Nil
-                    Nothing -> d $ T.pack str
+                Nothing     -> if iNil str
+                    then Nil
+                    else d $ T.pack str
 
 isInt a =       case a of
     DocInt b    -> True
@@ -231,7 +229,7 @@ toNil' a =       case a of
 
 -- TODO: implement isDTyped
 toDTyped a = case a of
-    DTyped v    -> v
+    DocTyped d  -> d 
     otherwise   -> error $ show a ++ " is not a DTyped value." 
 
 len a = case a of
@@ -251,7 +249,7 @@ showWithoutQuotes :: DocVal -> T.Text
 showWithoutQuotes dv =
     case dv of
         DocString t -> t
-        otherwise   -> show dv
+        otherwise   -> T.pack $ show dv
 
 instance DocValLike Integer where
     toDocVal    = DocInt
@@ -611,18 +609,24 @@ toJSON d =
   Query string support.  
 --------------------------------------------------------------------}
 
+fromBSKV :: [(BS.ByteString, Maybe BS.ByteString)] -> [(T.Text, T.Text)]
+fromBSKV xs = map (\(a, b) -> (TE.decodeUtf8 a, f b)) xs
+    where
+    f x = case x of
+        Nothing -> ""
+        Just a  -> TE.decodeUtf8 a
+
+toBSKV :: [(T.Text, T.Text)] -> [(BS.ByteString, Maybe BS.ByteString)]
+toBSKV xs = map (\(a, b) -> (TE.encodeUtf8 a, Just $ TE.encodeUtf8 b)) xs
+
 -- | Can't write it by hand, serializaton needs URL escaping.
 toQueryString :: Document -> T.Text
 toQueryString doc =
     let ls = map (\(a, b) -> (a, showWithoutQuotes b)) $  M.toList doc
-        lsPairs = map (\(a, b) -> T.intercalate "=" [a, b])
-    in T.intercalate 
+    in TE.decodeUtf8 . HT.renderQuery False $ toBSKV ls
 
 fromQueryString :: T.Text -> Document
-
-fromQueryString' :: T.Text -> Maybe Document
-
-frmQueryString'' :: T.Text -> (Document, Bool)
+fromQueryString t = readFromList . fromBSKV . HT.parseQuery $ TE.encodeUtf8 t
 
 {--------------------------------------------------------------------
   Other.  
