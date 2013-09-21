@@ -2,7 +2,7 @@
 --  see http://haskell.org/cabal/users-guide/
 
 name:                hakit
-version:             0.1.7.1
+version:             0.1.7.2
 synopsis:            nothing
 -- description:         
 homepage:            https://github.com/johnny-john/hakit
@@ -42,6 +42,7 @@ library
                        attoparsec,
                        aeson,
   -- Hakit.Http depends
+                       HTTP,
                        wai,
                        warp,
                        wai-extra,
