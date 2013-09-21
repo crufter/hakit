@@ -62,6 +62,7 @@ module Hakit (
     fromQueryString,
     toQueryString,
     -- * Other.
+    showWithoutQuotes,
     fromBSKV,
     toBSKV,
     readFromList,
