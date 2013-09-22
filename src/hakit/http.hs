@@ -68,7 +68,11 @@ import qualified Data.Map as M
 import qualified Data.Word as W
 import qualified Hakit.Mime as Mime
 -- HTTP client:
-import qualified Network.HTTP as HC
+import System.IO.Streams (InputStream, OutputStream, stdout)
+import qualified System.IO.Streams as Streams
+import qualified Data.ByteString as S
+import qualified Network.Http.Client as C
+import Data.Maybe (fromMaybe)
 import Control.Monad.IO.Class (liftIO)
 
 {--------------------------------------------------------------------
@@ -77,9 +81,9 @@ import Control.Monad.IO.Class (liftIO)
 
 data Req = Req {
     metho       :: T.Text,              -- | HTTP method (eg. GET, POST etc)
-    domai       :: T.Text,              -- | Domain.
+    domai       :: T.Text,              -- | "Domain" (and other stuff eg: http://www.domain.com)
     pat         :: [T.Text],            -- | Request path split by forward dashes.
-    param       :: Document,            -- | Query params.
+    param       :: Document,            -- | Query params. Both GET and POST.
     reqHeaders  :: [(T.Text, T.Text)]   -- | Headers.
 } deriving (Show)
 
@@ -226,7 +230,24 @@ startServer p reqHandler = do
   Http client.  
 --------------------------------------------------------------------}
 
--- To be implemented.
+-- | Executes an HTTP request.
+request :: Req -> IO BS.ByteString
+request r = do
+    c <- C.establishConnection . TE.encodeUtf8 $ domai r
+    q <- C.buildRequest $ do
+        C.http (C.Method . TE.encodeUtf8 $ metho r) . TE.encodeUtf8 $ T.concat ["/", T.intercalate "/" $ pat r]
+        C.setAccept $ case getHeader "Content-Type" r of
+           Just x  -> TE.encodeUtf8 x
+           Nothing -> "*/*"
+    C.sendRequest c q C.emptyBody
+    C.receiveResponse c C.concatHandler
+    --C.receiveResponse c (\re st -> do
+    --    let hd = C.headers re
+    --    let stcode = c.statusCode re
+    --    bod <- C.concatHandler
+    --    return . setCode stcode $ setHeaders hd resp
+    --    )
+    --C.closeConnection c
 
 {--------------------------------------------------------------------
   Convenience stuff.  
@@ -235,6 +256,13 @@ startServer p reqHandler = do
 {--------------------------------------------------------------------
   - Headers.  
 --------------------------------------------------------------------}
+
+getHeader :: Headery h => T.Text -> h -> Maybe T.Text
+getHeader t h =
+    let hs = filter (\(a, b) -> a == t) $ headers h
+    in if length hs > 0
+        then Just . snd $ head hs
+        else Nothing
 
 -- Sets or adds a tuple to a tuple list based on the first element
 -- of the tuple.
