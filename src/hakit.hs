@@ -366,7 +366,7 @@ getRec path doc = getRecurs accElems (DocMap doc) where
 
 -- | Get element with dot notation, eg:
 --
--- > get "author.books[1].title" example
+-- > get \"author.books[1].title\" example
 --
 -- Returns nil if the value specified by the path is Nil or that path is nonexistent.
 -- To differentiate between Nils and nonexistent access pathes see the exists method.
