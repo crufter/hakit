@@ -52,6 +52,6 @@ Lets you start cronlike jobs from your Haskell application.
 - Be gentle to people with a non-fp background.
 - Be fun to use.
 
-**Progress**: very-very-very early stage.
+**Progress**: very-very early stage.
 
 **Disclaimer**: I am a Haskell newbie, thus the code is probably not that idiomatic. This will change though as I gain experience.
