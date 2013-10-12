@@ -74,6 +74,7 @@ import qualified Data.ByteString as S
 import qualified Network.Http.Client as C
 import Data.Maybe (fromMaybe)
 import Control.Monad.IO.Class (liftIO)
+import qualified Control.Exception as E 
 
 {--------------------------------------------------------------------
   Types.  
@@ -230,8 +231,10 @@ startServer p reqHandler = do
   Http client.  
 --------------------------------------------------------------------}
 
+-- todo: use bracket to make sure the resources are cleaned up.
+
 -- | Executes an HTTP request.
-request :: Req -> IO BS.ByteString
+request :: Req -> IO Resp
 request r = do
     c <- C.establishConnection . TE.encodeUtf8 $ domai r
     q <- C.buildRequest $ do
@@ -240,14 +243,14 @@ request r = do
            Just x  -> TE.encodeUtf8 x
            Nothing -> "*/*"
     C.sendRequest c q C.emptyBody
-    C.receiveResponse c C.concatHandler
-    --C.receiveResponse c (\re st -> do
-    --    let hd = C.headers re
-    --    let stcode = c.statusCode re
-    --    bod <- C.concatHandler
-    --    return . setCode stcode $ setHeaders hd resp
-    --    )
-    --C.closeConnection c
+    resp <- C.receiveResponse c (\re st -> do
+        -- todo let hd = C.headers re
+        let stcode = C.getStatusCode re
+        bod <- C.concatHandler re st
+        return . setBody bod $ setStatus (toInteger stcode) resp
+        )
+    C.closeConnection c
+    return resp
 
 {--------------------------------------------------------------------
   Convenience stuff.  
