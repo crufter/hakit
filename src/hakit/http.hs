@@ -31,6 +31,8 @@ module Hakit.Http (
     Config(..),
     -- * Server
     startServer,
+    request,
+    requestJSON,
     defaultConfig,
     -- * Convenience stuff
     setHeader,
@@ -251,6 +253,13 @@ request r = do
         )
     C.closeConnection c
     return resp
+
+-- | Executes an HTTP request, parses JSON in response body,
+-- only returns the parsed JSON Document.
+requestJSON :: Req -> IO Document
+requestJSON r = do
+    resp <- request r
+    return . fromJSON . TE.decodeUtf8 . LBS.toStrict $ body resp
 
 {--------------------------------------------------------------------
   Convenience stuff.  
