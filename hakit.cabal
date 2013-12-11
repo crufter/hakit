@@ -46,6 +46,8 @@ library
                        wai,
                        warp,
                        wai-extra,
+                       http-streams,
+                       io-streams,
   -- Hakit.Mongo depends
                        mongoDB,
   -- Hakit.Extract depends

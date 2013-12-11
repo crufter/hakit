@@ -3,9 +3,16 @@
 
 module Hakit.Validation (
     -- * Validation
-    validate, validateSafe, builtins, Validator,
+    validate,
+    validateSafe,
+    builtins,
+    Validator,
     -- * Misc
-    listMin, listMax, listIgnore, min', max'
+    listMin,
+    listMax,
+    listIgnore,
+    min',
+    max'
 ) where
 
 import Hakit
