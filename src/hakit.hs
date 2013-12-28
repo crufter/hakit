@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances   #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE OverlappingInstances      #-}
 
 {-|
 
@@ -279,6 +280,10 @@ instance DocValLike DList where
     toDocVal    = DocList
     fromDocVal  = toList
 
+instance DocValLike a => DocValLike [a] where
+    toDocVal    = DocList . map toDocVal
+    fromDocVal  = map fromDocVal . toList 
+
 instance DocValLike DTyped where
     toDocVal    = DocTyped
     fromDocVal  = toDTyped
@@ -295,8 +300,9 @@ instance DocValLike [(T.Text, DocVal)] where
     toDocVal = DocMap . M.fromList
     fromDocVal = M.toList . toMap
 
+--
 instance DocValLike a => DocValLike (M.Map T.Text a) where
-    toDocVal = (d . map (\(k, v) -> (k, d v))) . M.toList
+    toDocVal = DocMap . M.fromList . map (\(k, v) -> (k, d v)) . M.toList
     fromDocVal m = M.fromList . map (\(k, v) -> (k, fromDocVal v)) . M.toList $ toMap m
 
 -- instance DocValLike a => DocValLike [a] where
