@@ -64,7 +64,7 @@ import qualified Network.HTTP.Types.Header as HTypesHeader
 -- HTTP server impl:
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.Wai as Wai
-import qualified Network.Wai.Parse as WP
+-- import qualified Network.Wai.Parse as WP
 import qualified Data.Conduit as Cond
 import qualified Data.Map as M
 import qualified Data.Word as W
@@ -77,7 +77,7 @@ import qualified Network.Http.Client as C
 import Data.Maybe (fromMaybe)
 import Control.Monad.IO.Class (liftIO)
 import qualified Control.Exception as E
-import qualified Data.Conduit.Lazy as LC
+import Debug.Trace
 
 {--------------------------------------------------------------------
   Types.  
@@ -204,18 +204,17 @@ fromCI xs = map (\(k, v) -> (TE.decodeUtf8 $ CI.original k, TE.decodeUtf8 v)) xs
 
 waiToHakit :: Wai.Request -> IO Req
 waiToHakit wr = do
-    (paramList, files) <- Cond.runResourceT $ WP.parseRequestBody WP.tempFileBackEnd wr
-    bss <- liftIO . Cond.runResourceT . LC.lazyConsume . Wai.requestBody $ wr
+    --(paramList, files) <- Cond.runResourceT $ WP.parseRequestBody WP.tempFileBackEnd wr
+    bss <- Wai.lazyRequestBody wr
     let getParams = readFromList . fromBSKV $ Wai.queryString wr
-        fileList = map (\(a, b) -> (a, WP.fileName b)) files
-        postParams = readFromList . fromBSKV . map (\(a, b) -> (a, Just b)) $ paramList ++ fileList
+        --fileList = map (\(a, b) -> (a, WP.fileName b)) files
+        --postParams = readFromList . fromBSKV . map (\(a, b) -> (a, Just b)) $ paramList ++ fileList
         verb = TE.decodeUtf8 $ Wai.requestMethod wr
-        params = if verb == "GET"
-            then getParams
-            else postParams
+        --params = if verb == "GET"
+        --    then getParams
+        --    else postParams
         reqHs = fromCI $ Wai.requestHeaders wr
-        bod = LBS.concat $ map LBS.fromStrict bss
-    return $ Req bod verb (TE.decodeUtf8 $ Wai.serverName wr) (Wai.pathInfo wr) params reqHs
+    return $ Req bss verb "" (Wai.pathInfo wr) getParams reqHs
 
 statusToInt :: HTypes.Status -> Integer
 statusToInt s = toInteger $ HTypes.statusCode s
@@ -223,9 +222,8 @@ statusToInt s = toInteger $ HTypes.statusCode s
 intToStatus :: Integer -> HTypes.Status
 intToStatus i = HTypes.Status ((fromInteger i)::Int) ""
 
-hakitToWai :: Cond.ResourceT IO Resp -> Cond.ResourceT IO Wai.Response
-hakitToWai fresp = do
-    fr <- fresp
+hakitToWai :: Resp -> IO Wai.Response
+hakitToWai fr = do
     let statusCode = intToStatus $ status fr
         headers = respHeaders fr
         mimeType = Mime.mimeTypeOf $ contentType fr
@@ -241,8 +239,9 @@ startServer p reqHandler = do
     Warp.run p conv
     where
         conv a = do
-            a1 <- liftIO $ waiToHakit a
-            hakitToWai . liftIO $ reqHandler a1
+            a1 <- waiToHakit a
+            r <- reqHandler a1
+            hakitToWai r
 
 {--------------------------------------------------------------------
   Http client.  

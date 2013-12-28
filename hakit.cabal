@@ -2,7 +2,7 @@
 --  see http://haskell.org/cabal/users-guide/
 
 name:                hakit
-version:             0.1.9.1
+version:             0.1.9.5
 synopsis:            nothing
 -- description:         
 homepage:            https://github.com/johnny-john/hakit
@@ -43,9 +43,9 @@ library
                        aeson,
   -- Hakit.Http depends
                        HTTP,
-                       wai,
-                       warp,
-                       wai-extra,
+                       wai >= 2.0      && < 2.1,
+                       warp >= 2.0,
+                       --wai-extra,
                        http-streams,
                        io-streams,
   -- Hakit.Mongo depends
