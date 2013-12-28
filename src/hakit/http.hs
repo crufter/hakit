@@ -76,7 +76,8 @@ import qualified Data.ByteString as S
 import qualified Network.Http.Client as C
 import Data.Maybe (fromMaybe)
 import Control.Monad.IO.Class (liftIO)
-import qualified Control.Exception as E 
+import qualified Control.Exception as E
+import qualified Data.Conduit.Lazy as LC
 
 {--------------------------------------------------------------------
   Types.  
@@ -204,6 +205,7 @@ fromCI xs = map (\(k, v) -> (TE.decodeUtf8 $ CI.original k, TE.decodeUtf8 v)) xs
 waiToHakit :: Wai.Request -> IO Req
 waiToHakit wr = do
     (paramList, files) <- Cond.runResourceT $ WP.parseRequestBody WP.tempFileBackEnd wr
+    bss <- liftIO . Cond.runResourceT . LC.lazyConsume . Wai.requestBody $ wr
     let getParams = readFromList . fromBSKV $ Wai.queryString wr
         fileList = map (\(a, b) -> (a, WP.fileName b)) files
         postParams = readFromList . fromBSKV . map (\(a, b) -> (a, Just b)) $ paramList ++ fileList
@@ -212,7 +214,8 @@ waiToHakit wr = do
             then getParams
             else postParams
         reqHs = fromCI $ Wai.requestHeaders wr
-    return $ Req "" verb (TE.decodeUtf8 $ Wai.serverName wr) (Wai.pathInfo wr) params reqHs
+        bod = LBS.concat $ map LBS.fromStrict bss
+    return $ Req bod verb (TE.decodeUtf8 $ Wai.serverName wr) (Wai.pathInfo wr) params reqHs
 
 statusToInt :: HTypes.Status -> Integer
 statusToInt s = toInteger $ HTypes.statusCode s
