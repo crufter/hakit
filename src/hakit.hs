@@ -271,9 +271,9 @@ instance DocValLike Bool where
     toDocVal    = DocBool
     fromDocVal  = toBool
 
-instance DocValLike Document where
-    toDocVal    = DocMap
-    fromDocVal  = toMap
+--instance DocValLike Document where
+--    toDocVal    = DocMap
+--    fromDocVal  = toMap
 
 instance DocValLike DList where
     toDocVal    = DocList
@@ -294,6 +294,10 @@ instance DocValLike T.Text where
 instance DocValLike [(T.Text, DocVal)] where
     toDocVal = DocMap . M.fromList
     fromDocVal = M.toList . toMap
+
+instance DocValLike a => DocValLike (M.Map T.Text a) where
+    toDocVal = (d . map (\(k, v) -> (k, d v))) . M.toList
+    fromDocVal m = M.fromList . map (\(k, v) -> (k, fromDocVal v)) . M.toList $ toMap m
 
 -- instance DocValLike a => DocValLike [a] where
 --     toDocVal l = DocList $ map toDocVal l
