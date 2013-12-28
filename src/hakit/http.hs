@@ -83,6 +83,7 @@ import qualified Control.Exception as E
 --------------------------------------------------------------------}
 
 data Req = Req {
+    reqBody     :: LBS.ByteString,      -- | Request body
     metho       :: T.Text,              -- | HTTP method (eg. GET, POST etc)
     domai       :: T.Text,              -- | "Domain" (and other stuff eg: http://www.domain.com)
     pat         :: [T.Text],            -- | Request path split by forward dashes.
@@ -92,7 +93,7 @@ data Req = Req {
 
 -- | An empty request. See resp for more info.
 req :: Req
-req = Req "GET" "" [] nilDoc []
+req = Req "" "GET" "" [] nilDoc []
 
 method :: Req -> T.Text
 method = metho
@@ -121,7 +122,7 @@ setDomain v r = r{domai=v}
 -- | Response.
 data Resp = Resp {
     statusCode      :: Integer,             -- | Status code.
-    bod             :: LBS.ByteString,      -- | Response body.
+    respBody        :: LBS.ByteString,      -- | Response body.
     respHeaders     :: [(T.Text, T.Text)]
 } deriving (Show)
 
@@ -139,26 +140,37 @@ status res = statusCode res
 setStatus :: Integer -> Resp -> Resp
 setStatus i res = res{statusCode=i}
 
-body :: Resp -> LBS.ByteString
-body = bod
-
 class LbsComp a where
     toLbs :: a -> LBS.ByteString
+    fromLbs :: LBS.ByteString -> a
 
 instance LbsComp String where
     toLbs = LBS.fromStrict . TE.encodeUtf8 . T.pack
+    fromLbs = T.unpack . TE.decodeUtf8 . LBS.toStrict
 
 instance LbsComp T.Text where
     toLbs = LBS.fromStrict . TE.encodeUtf8
+    fromLbs = TE.decodeUtf8 . LBS.toStrict
 
 instance LbsComp LBS.ByteString where
     toLbs = id
+    fromLbs = id
 
 instance LbsComp BS.ByteString where
     toLbs = LBS.fromStrict
+    fromLbs = LBS.toStrict
 
-setBody :: LbsComp a => a -> Resp -> Resp
-setBody b r = r{bod=toLbs b}
+class HasBody a where
+    body :: LbsComp b => a -> b
+    setBody :: LbsComp b => b -> a -> a
+
+instance HasBody Req where
+    body = fromLbs . reqBody
+    setBody v r = r{reqBody=toLbs v}
+
+instance HasBody Resp where
+    body = fromLbs . respBody
+    setBody v r = r{respBody=toLbs v} 
 
 -- | A typeclass for Req and Resp types, since they all have headers
 class Headery a where
@@ -200,7 +212,7 @@ waiToHakit wr = do
             then getParams
             else postParams
         reqHs = fromCI $ Wai.requestHeaders wr
-    return $ Req verb (TE.decodeUtf8 $ Wai.serverName wr) (Wai.pathInfo wr) params reqHs
+    return $ Req "" verb (TE.decodeUtf8 $ Wai.serverName wr) (Wai.pathInfo wr) params reqHs
 
 statusToInt :: HTypes.Status -> Integer
 statusToInt s = toInteger $ HTypes.statusCode s
